@@ -6,6 +6,7 @@ pub mod addr_cse;
 pub mod branches;
 pub mod const_hoist;
 pub mod dedupe;
+pub mod exnref;
 pub mod inline;
 pub mod locals;
 pub mod memory_packing;

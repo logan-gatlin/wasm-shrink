@@ -1,12 +1,14 @@
 //! wasm-shrink: the size-reducing parts of `wasm-opt -Oz`, as walrus passes.
 //!
-//! Usage: wasm-shrink IN.wasm -o OUT.wasm [--passes a,b,c] [--no-reorder] [--quiet]
+//! Usage: wasm-shrink IN.wasm -o OUT.wasm [--passes a,b,c] [--translate-to-exnref] [--no-reorder] [--quiet]
 //! (`--help` lists every option and pass.)
 //!
 //! With no `--passes`, the default pipeline runs. `--passes none` only
 //! round-trips the module through walrus (the baseline for measurements).
 //! After emitting, the most-used functions are moved first (see
 //! [`wasm_shrink::reorder_functions`]); `--no-reorder` skips that.
+//! `--translate-to-exnref` first rewrites legacy exception handling as
+//! `try_table`/`throw_ref` (see [`wasm_shrink::passes::exnref`]).
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -28,6 +30,10 @@ struct Args {
     /// round-trips the module through walrus.
     #[arg(long, value_delimiter = ',', value_parser = pass_names())]
     passes: Option<Vec<String>>,
+    /// Rewrite legacy exception handling (`try`, `delegate`, `rethrow`) as
+    /// `try_table` and `throw_ref` before the other passes.
+    #[arg(long)]
+    translate_to_exnref: bool,
     /// Keep walrus's function order (largest first).
     #[arg(long)]
     no_reorder: bool,
@@ -49,6 +55,7 @@ fn main() -> Result<()> {
         input,
         output,
         passes: list,
+        translate_to_exnref,
         no_reorder,
         quiet,
     } = Args::parse();
@@ -57,7 +64,7 @@ fn main() -> Result<()> {
         .parse(&wasm)
         .context("parsing module")?;
 
-    let passes: Vec<Pass> = match list {
+    let mut passes: Vec<Pass> = match list {
         None => Pass::DEFAULT.to_vec(),
         Some(l) => l
             .iter()
@@ -65,6 +72,9 @@ fn main() -> Result<()> {
             .map(|p| p.parse())
             .collect::<Result<_, _>>()?,
     };
+    if translate_to_exnref {
+        passes.insert(0, Pass::TranslateToExnref);
+    }
     for pass in passes {
         let t = Instant::now();
         let stats = pass.run(&mut m);

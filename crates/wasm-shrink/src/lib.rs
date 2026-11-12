@@ -71,6 +71,10 @@ pub enum Pass {
     CoalesceLocals,
     /// Remove `local.set`/`local.get` pairs the stack can carry ([`locals::stackify`]).
     Stackify,
+    /// Rewrite legacy exception handling (`try`, `delegate`, `rethrow`) as
+    /// `try_table` and `throw_ref` ([`exnref`]). Not part of the default
+    /// pipeline: it changes which engines can run the module, not its size.
+    TranslateToExnref,
 }
 
 impl Pass {
@@ -88,6 +92,7 @@ impl Pass {
         Pass::ConstHoist,
         Pass::CoalesceLocals,
         Pass::Stackify,
+        Pass::TranslateToExnref,
     ];
 
     /// The default pipeline, in order. Some passes appear twice.
@@ -133,6 +138,7 @@ impl Pass {
             Pass::ConstHoist => "const-hoist",
             Pass::CoalesceLocals => "coalesce-locals",
             Pass::Stackify => "stackify",
+            Pass::TranslateToExnref => "translate-to-exnref",
         }
     }
 
@@ -154,6 +160,7 @@ impl Pass {
             Pass::ConstHoist => Stats::ConstHoist(const_hoist::run(m)),
             Pass::CoalesceLocals => Stats::CoalesceLocals(locals::coalesce(m)),
             Pass::Stackify => Stats::Stackify(locals::stackify(m)),
+            Pass::TranslateToExnref => Stats::TranslateToExnref(exnref::run(m)),
         }
     }
 }
@@ -208,6 +215,7 @@ pub enum Stats {
     ConstHoist(const_hoist::Stats),
     CoalesceLocals(locals::CoalesceStats),
     Stackify(locals::StackifyStats),
+    TranslateToExnref(exnref::Stats),
 }
 
 impl fmt::Display for Stats {
@@ -225,6 +233,7 @@ impl fmt::Display for Stats {
             Stats::ConstHoist(s) => write!(f, "{s:?}"),
             Stats::CoalesceLocals(s) => write!(f, "{s:?}"),
             Stats::Stackify(s) => write!(f, "{s:?}"),
+            Stats::TranslateToExnref(s) => write!(f, "{s:?}"),
         }
     }
 }

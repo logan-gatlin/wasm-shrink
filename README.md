@@ -7,6 +7,7 @@ cargo build --release
 target/release/wasm-shrink in.wasm -o out.wasm            # default pipeline
 target/release/wasm-shrink in.wasm -o out.wasm --passes dedupe,inline
 target/release/wasm-shrink in.wasm -o out.wasm --passes none --no-reorder   # walrus round-trip only
+target/release/wasm-shrink in.wasm -o out.wasm --translate-to-exnref  # also convert legacy exception handling
 target/release/wasm-shrink --help                         # every option and pass
 ```
 
@@ -124,6 +125,15 @@ Measured with the study's harness: runtime is the steady-state CPU time of each 
 - **Startup is slightly faster** than with the first-round pipeline, because there is less code to compile (fast −0.39% ± 0.06; small +0.14% ± 0.05). Function reordering costs about 0.1% of compile time: walrus emits the largest functions first so that a parallel compile starts on them early, and reordering gives that up. The worst single project is +1.3% total startup.
 - `perf` is not available on the benchmark machine, so these are wall-clock CPU times, not instruction counts.
 
+## Legacy exception handling
+
+`--translate-to-exnref` (`Pass::TranslateToExnref`) rewrites legacy exception handling (`try`, `catch`, `catch_all`, `delegate`, `rethrow`) as `try_table` and `throw_ref`, before the other passes run. It is the step emcc runs binaryen for: `worker-build --emscripten` compiles user crates with `-wasm-use-legacy-eh=false`, but the prebuilt Rust std uses legacy `try`. workerd's V8 refuses the mix ("module uses a mix of legacy and new exception handling instructions"), so emcc runs `--translate-to-exnref` at link (`-sBINARYEN_EXTRA_PASSES`). The pass is not in the default pipeline because the output needs an engine with exnref support; it changes nothing in a module without legacy instructions.
+
+- **How.** A `try` with handlers becomes a `try_table` whose catches branch to one block per handler. A handler that a `rethrow` targets is reached with `catch_ref`/`catch_all_ref` and keeps its `exnref` in a local, and the `rethrow` becomes `local.get` + `throw_ref`. `delegate L` rethrows as if from directly inside `L`, so the contents of `L` are wrapped in a block that a `catch_all_ref` reaches and that ends in `throw_ref`. Walrus gives each handler its own sequence, so a label written inside a handler resolves to the handler, where the `try`'s own catches no longer apply, as the legacy proposal specifies. The module docs of `passes::exnref` have the details.
+- **Checked on:** a test module covering each case in the legacy proposal (`delegate` to a `try`, a `block`, a `loop`, a handler, the caller, chained; `rethrow` from nested handlers and inside nested `try` bodies; `try` with parameters, in loops, with branches out of handlers), an emscripten C++ build with legacy EH (22 `try`s, 13 `delegate`s and `rethrow`s), and wasm-bindgen's `panic_unwind_legacy` reference test (253 `try`s, 46 `delegate`s, 62 `rethrow`s). In Node, every export returned the same values and threw the same exceptions before and after translation, with or without the rest of the pipeline after it; Rust panics still unwind to a `PanicError` and the instance keeps working. workerd runs the translated module. All outputs validate, and the output is deterministic.
+- **Size.** On the wasm-bindgen test, translation adds 0.9% to the code section over a walrus round trip; binaryen's translation is 0.8% larger than wasm-shrink's. Translated functions also get `branches` and `coalesce-locals`, which skip functions with legacy `try`.
+- **Debug info.** Like the rest of wasm-shrink, the pass does not keep DWARF (walrus drops it), so there is no slow DWARF rewrite; binaryen 133 could not read the C++ module's DWARF 5 at all ("unsupported form").
+
 ## Where the passes come from
 
 The passes are chosen from a skip-one sweep over `wasm-opt -Oz`: the full pipeline with one pass skipped at a time (`--skip-pass`), on the small profile. The marginal loss per binaryen pass, in percentage points of median size:
@@ -185,12 +195,7 @@ Function reordering changes nothing in the projects that import 128 or more func
 
 ## Not done (yet)
 
-- **Converting legacy exception handling to exnref, which still needs wasm-opt.**
-  - `worker-build --emscripten` compiles user crates with `-wasm-use-legacy-eh=false`, but the prebuilt Rust std uses legacy `try`/`catch`.
-  - V8 rejects a module that mixes the two encodings, so emcc runs binaryen's `--translate-to-exnref` at link (`-sBINARYEN_EXTRA_PASSES`).
-  - In debuginfo builds, binaryen must also rewrite the DWARF to follow the changed code. That step is slow, and before wasm-bindgen#5328 it failed outright.
-  - wasm-shrink doesn't convert: it leaves legacy `try` alone, and `coalesce-locals` skips those functions. The corpus never needs the conversion, because the study left out `--emscripten` builds. No input contains a legacy `try`, and the 52 that use exceptions already use `try_table`.
-  - This conversion may be better done in walrus, keeping debug info as source maps rather than rewriting DWARF. Walrus can't do either today. It has no translation pass, and its debug-info support is DWARF rewriting through gimli (`ModuleConfig::generate_dwarf`).
+- **Debug info through exception-handling translation.** [`--translate-to-exnref`](#legacy-exception-handling) drops DWARF, as the rest of wasm-shrink does. Keeping debug info would mean source maps, or walrus's DWARF rewriting through gimli (`ModuleConfig::generate_dwarf`), which wasm-shrink does not enable. The corpus has no legacy `try` (the study left out `--emscripten` builds; the 52 inputs that use exceptions already use `try_table`), so the corpus numbers above don't exercise the pass.
 - What binaryen could still remove from wasm-shrink's output, one pass at a time (median code-section change, small / fast):
   - `code-folding` −0.14% / −0.20%. Jump threading took most of what a simple version would find. The rest is identical code before `br`s to the same block and before `unreachable`s in different blocks, which needs binaryen's search for the best set of tails to merge.
   - `simplify-locals-nostructure` −0.15% / −0.12%: moving a `local.set`'s value down to its only `local.get`. Unlike stack carrying, this reorders evaluation, so it needs an effect analysis (what each instruction reads, writes and may trap on).
