@@ -1,0 +1,15 @@
+[package]
+name = "wasm-shrink-cli"
+description = "Command-line front end for wasm-shrink"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "wasm-shrink"
+path = "src/main.rs"
+
+[dependencies]
+wasm-shrink.workspace = true
+walrus.workspace = true
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }

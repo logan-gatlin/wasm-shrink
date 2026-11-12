@@ -1,0 +1,566 @@
+[
+ {
+  "id": "aoc",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/aoc/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/aoc/O3/index_bg.wasm"
+ },
+ {
+  "id": "aoc",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/aoc/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/aoc/Oz/index_bg.wasm"
+ },
+ {
+  "id": "zhconv",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/zhconv/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/zhconv/O3/index_bg.wasm"
+ },
+ {
+  "id": "zhconv",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/zhconv/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/zhconv/Oz/index_bg.wasm"
+ },
+ {
+  "id": "spacebadgers",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/spacebadgers/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/spacebadgers/O3/index_bg.wasm"
+ },
+ {
+  "id": "spacebadgers",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/spacebadgers/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/spacebadgers/Oz/index_bg.wasm"
+ },
+ {
+  "id": "argon2",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/argon2/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/argon2/O3/index_bg.wasm"
+ },
+ {
+  "id": "argon2",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/argon2/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/argon2/Oz/index_bg.wasm"
+ },
+ {
+  "id": "stationapi",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/stationapi/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/stationapi/O3/index_bg.wasm"
+ },
+ {
+  "id": "stationapi",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/stationapi/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/stationapi/Oz/index_bg.wasm"
+ },
+ {
+  "id": "ripgit",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/ripgit/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/ripgit/O3/index_bg.wasm"
+ },
+ {
+  "id": "ripgit",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/ripgit/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/ripgit/Oz/index_bg.wasm"
+ },
+ {
+  "id": "azul-ct",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/azul-ct/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/azul-ct/O3/index_bg.wasm"
+ },
+ {
+  "id": "azul-ct",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/azul-ct/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/azul-ct/Oz/index_bg.wasm"
+ },
+ {
+  "id": "rs-hello",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/rs-hello/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/rs-hello/O3/index_bg.wasm"
+ },
+ {
+  "id": "rs-hello",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/rs-hello/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/rs-hello/Oz/index_bg.wasm"
+ },
+ {
+  "id": "rs-axum",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/rs-axum/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/rs-axum/O3/index_bg.wasm"
+ },
+ {
+  "id": "rs-axum",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/rs-axum/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/rs-axum/Oz/index_bg.wasm"
+ },
+ {
+  "id": "rs-leptos",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/rs-leptos/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/rs-leptos/O3/index_bg.wasm"
+ },
+ {
+  "id": "rs-leptos",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/rs-leptos/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/rs-leptos/Oz/index_bg.wasm"
+ },
+ {
+  "id": "rs-router",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/rs-router/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/rs-router/O3/index_bg.wasm"
+ },
+ {
+  "id": "rs-router",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/rs-router/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/rs-router/Oz/index_bg.wasm"
+ },
+ {
+  "id": "rs-test",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/rs-test/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/rs-test/O3/index_bg.wasm"
+ },
+ {
+  "id": "rs-test",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/rs-test/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/rs-test/Oz/index_bg.wasm"
+ },
+ {
+  "id": "warden",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/warden/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/warden/O3/index_bg.wasm"
+ },
+ {
+  "id": "warden",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/warden/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/warden/Oz/index_bg.wasm"
+ },
+ {
+  "id": "seaorm-d1",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/seaorm-d1/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/seaorm-d1/O3/index_bg.wasm"
+ },
+ {
+  "id": "seaorm-d1",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/seaorm-d1/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/seaorm-d1/Oz/index_bg.wasm"
+ },
+ {
+  "id": "poem",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/poem/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/poem/O3/index_bg.wasm"
+ },
+ {
+  "id": "poem",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/poem/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/poem/Oz/index_bg.wasm"
+ },
+ {
+  "id": "dictdeck",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/dictdeck/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/dictdeck/O3/index_bg.wasm"
+ },
+ {
+  "id": "dictdeck",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/dictdeck/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/dictdeck/Oz/index_bg.wasm"
+ },
+ {
+  "id": "gwc-edge",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/gwc-edge/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/gwc-edge/O3/index_bg.wasm"
+ },
+ {
+  "id": "gwc-edge",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/gwc-edge/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/gwc-edge/Oz/index_bg.wasm"
+ },
+ {
+  "id": "otlp",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/otlp/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/otlp/O3/index_bg.wasm"
+ },
+ {
+  "id": "otlp",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/otlp/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/otlp/Oz/index_bg.wasm"
+ },
+ {
+  "id": "qr-worker",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/qr-worker/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/qr-worker/O3/worker/index.wasm"
+ },
+ {
+  "id": "qr-worker",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/qr-worker/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/qr-worker/Oz/worker/index.wasm"
+ },
+ {
+  "id": "qrcode-show",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/qrcode-show/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/qrcode-show/O3/index_bg.wasm"
+ },
+ {
+  "id": "qrcode-show",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/qrcode-show/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/qrcode-show/Oz/index_bg.wasm"
+ },
+ {
+  "id": "argus",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/argus/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/argus/O3/index_bg.wasm"
+ },
+ {
+  "id": "argus",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/argus/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/argus/Oz/index_bg.wasm"
+ },
+ {
+  "id": "argon2-sw",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/argon2-sw/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/argon2-sw/O3/index_bg.wasm"
+ },
+ {
+  "id": "argon2-sw",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/argon2-sw/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/argon2-sw/Oz/index_bg.wasm"
+ },
+ {
+  "id": "redirectionio",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/redirectionio/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/redirectionio/O3/index_bg.wasm"
+ },
+ {
+  "id": "redirectionio",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/redirectionio/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/redirectionio/Oz/index_bg.wasm"
+ },
+ {
+  "id": "pvcli-ohttp",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/pvcli-ohttp/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/pvcli-ohttp/O3/index_bg.wasm"
+ },
+ {
+  "id": "pvcli-ohttp",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/pvcli-ohttp/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/pvcli-ohttp/Oz/index_bg.wasm"
+ },
+ {
+  "id": "rs-digest",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/rs-digest/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/rs-digest/O3/index_bg.wasm"
+ },
+ {
+  "id": "rs-digest",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/rs-digest/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/rs-digest/Oz/index_bg.wasm"
+ },
+ {
+  "id": "azul-mirror",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/azul-mirror/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/azul-mirror/O3/index_bg.wasm"
+ },
+ {
+  "id": "azul-mirror",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/azul-mirror/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/azul-mirror/Oz/index_bg.wasm"
+ },
+ {
+  "id": "erika",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/erika/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/erika/O3/index_bg.wasm"
+ },
+ {
+  "id": "erika",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/erika/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/erika/Oz/index_bg.wasm"
+ },
+ {
+  "id": "parquet-llm",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/parquet-llm/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/parquet-llm/O3/index_bg.wasm"
+ },
+ {
+  "id": "parquet-llm",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/parquet-llm/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/parquet-llm/Oz/index_bg.wasm"
+ },
+ {
+  "id": "htmx-app",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/htmx-app/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/htmx-app/O3/index_bg.wasm"
+ },
+ {
+  "id": "htmx-app",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/htmx-app/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/htmx-app/Oz/index_bg.wasm"
+ },
+ {
+  "id": "htmx-jobs",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/htmx-jobs/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/htmx-jobs/O3/index_bg.wasm"
+ },
+ {
+  "id": "htmx-jobs",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/htmx-jobs/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/htmx-jobs/Oz/index_bg.wasm"
+ },
+ {
+  "id": "valdr",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/valdr/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/valdr/O3/index_bg.wasm"
+ },
+ {
+  "id": "valdr",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/valdr/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/valdr/Oz/index_bg.wasm"
+ },
+ {
+  "id": "contrib-stats",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/contrib-stats/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/contrib-stats/O3/index_bg.wasm"
+ },
+ {
+  "id": "contrib-stats",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/contrib-stats/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/contrib-stats/Oz/index_bg.wasm"
+ },
+ {
+  "id": "jsr",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/jsr/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/jsr/O3/index_bg.wasm"
+ },
+ {
+  "id": "jsr",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/jsr/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/jsr/Oz/index_bg.wasm"
+ },
+ {
+  "id": "kr-juso",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/kr-juso/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/kr-juso/O3/index_bg.wasm"
+ },
+ {
+  "id": "kr-juso",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/kr-juso/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/kr-juso/Oz/index_bg.wasm"
+ },
+ {
+  "id": "ohkami-dows",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/ohkami-dows/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/ohkami-dows/O3/index_bg.wasm"
+ },
+ {
+  "id": "ohkami-dows",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/ohkami-dows/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/ohkami-dows/Oz/index_bg.wasm"
+ },
+ {
+  "id": "slatedb",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/slatedb/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/slatedb/O3/index_bg.wasm"
+ },
+ {
+  "id": "slatedb",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/slatedb/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/slatedb/Oz/index_bg.wasm"
+ },
+ {
+  "id": "sqlsync",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/sqlsync/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/sqlsync/O3/index_bg.wasm"
+ },
+ {
+  "id": "sqlsync",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/sqlsync/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/sqlsync/Oz/index_bg.wasm"
+ },
+ {
+  "id": "axum-adapter",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/axum-adapter/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/axum-adapter/O3/worker/index.wasm"
+ },
+ {
+  "id": "axum-adapter",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/axum-adapter/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/axum-adapter/Oz/worker/index.wasm"
+ },
+ {
+  "id": "linkup",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/linkup/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/linkup/O3/worker/index.wasm"
+ },
+ {
+  "id": "linkup",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/linkup/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/linkup/Oz/worker/index.wasm"
+ },
+ {
+  "id": "url-shortener",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/url-shortener/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/url-shortener/O3/worker/index.wasm"
+ },
+ {
+  "id": "url-shortener",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/url-shortener/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/url-shortener/Oz/worker/index.wasm"
+ },
+ {
+  "id": "eddiner",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/eddiner/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/eddiner/O3/worker/index.wasm"
+ },
+ {
+  "id": "eddiner",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/eddiner/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/eddiner/Oz/worker/index.wasm"
+ },
+ {
+  "id": "registry-edge",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/registry-edge/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/registry-edge/O3/worker/index.wasm"
+ },
+ {
+  "id": "registry-edge",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/registry-edge/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/registry-edge/Oz/worker/index.wasm"
+ },
+ {
+  "id": "coredump",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/coredump/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/coredump/O3/worker/index.wasm"
+ },
+ {
+  "id": "coredump",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/coredump/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/coredump/Oz/worker/index.wasm"
+ },
+ {
+  "id": "wonnx",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/wonnx/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/wonnx/O3/worker/index.wasm"
+ },
+ {
+  "id": "wonnx",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/wonnx/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/wonnx/Oz/worker/index.wasm"
+ },
+ {
+  "id": "stdrs",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/stdrs/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/stdrs/O3/worker/index.wasm"
+ },
+ {
+  "id": "stdrs",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/stdrs/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/stdrs/Oz/worker/index.wasm"
+ },
+ {
+  "id": "libsql",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/libsql/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/libsql/O3/worker/index.wasm"
+ },
+ {
+  "id": "libsql",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/libsql/none/worker/index.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/libsql/Oz/worker/index.wasm"
+ },
+ {
+  "id": "rs-benchmark",
+  "profile": "fast",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/rs-benchmark/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/fast/rs-benchmark/O3/index_bg.wasm"
+ },
+ {
+  "id": "rs-benchmark",
+  "profile": "small",
+  "none": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/rs-benchmark/none/index_bg.wasm",
+  "opt": "/home/lgatlin/.t3/scratch/2026-11-09-how-systemically-used-is-wasm-87c0eeda/bench/out/small/rs-benchmark/Oz/index_bg.wasm"
+ }
+]

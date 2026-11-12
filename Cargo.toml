@@ -1,0 +1,13 @@
+[workspace]
+members = ["crates/wasm-shrink", "crates/cli"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+wasm-shrink = { path = "crates/wasm-shrink" }
+# Unreleased fixes on main after 0.28.0: no empty `else` arms (#336) and
+# visitors that see each field once (#337).
+walrus = { git = "https://github.com/wasm-bindgen/walrus", rev = "fd2782b7264ae69e4798745dfbb85c64df8ca4bd", features = ["parallel"] }

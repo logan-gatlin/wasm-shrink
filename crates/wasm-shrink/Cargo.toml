@@ -1,0 +1,15 @@
+[package]
+name = "wasm-shrink"
+description = "Size-reducing optimization passes for walrus modules"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+walrus.workspace = true
+rayon = "1.11"
+wasmparser = "0.245"
+wasm-encoder = { version = "0.245", features = ["wasmparser"] }
+
+[dev-dependencies]
+wat = "1"
+wasmprinter = "0.245"
