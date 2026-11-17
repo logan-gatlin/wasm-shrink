@@ -3,11 +3,15 @@
 //! A function is inlined into all of its call sites, and then deleted, when that
 //! makes the module smaller by the byte estimate below. That covers:
 //! - functions with one call site (the common case), which cost a function
-//!   entry, a code-section header, a local declaration and a name to keep apart;
+//!   entry, a code-section header and a local declaration to keep apart;
 //! - tiny functions whose body is about the size of the `call` to them.
 //!
 //! This is the size part of binaryen's `inlining-optimizing` at -Os/-Oz, without
 //! the re-optimization binaryen runs on the result.
+//!
+//! The estimate counts only bytes that ship: the name section is assumed to be
+//! stripped or split off, so a removed function's name is not a gain. The
+//! same code therefore comes out whether or not the input has names.
 //!
 //! The callee body is copied into the caller:
 //!
@@ -265,14 +269,15 @@ fn knob(name: &str, default: i64) -> i64 {
 /// Estimated size change (bytes) of inlining `g` everywhere and deleting it.
 ///
 /// `size` is (instruction bytes, body bytes) from [`crate::size::function`].
+/// `arg_sets` is the number of `local.set`s that pop arguments, over all
+/// sites (arguments [`forwarded`] in place need none).
 /// Without a snapshot this is an upper bound: it assumes no wrapper block and
 /// no zeroing of locals, which can only lower the gain. It is used to skip
 /// copying the bodies of functions that could never pay.
 #[allow(clippy::too_many_arguments)]
 fn gain(
     m: &Module,
-    g: FunctionId,
-    nargs: usize,
+    arg_sets: usize,
     snap: Option<&Snapshot>,
     uses: &Uses,
     (instr_bytes, body_len): (usize, usize),
@@ -281,8 +286,8 @@ fn gain(
 ) -> Option<i64> {
     let call = 1 + call_leb as i64;
     let n = uses.call_count() as i64;
-    // Per site: arguments popped into locals, the body, a block around it.
-    let mut site = instr_bytes as i64 + 2 * nargs as i64;
+    // Per site: the body and a block around it.
+    let mut site = instr_bytes as i64;
     let mut zero = 0i64;
     if let Some(snap) = snap {
         if snap.branches_to_entry {
@@ -292,26 +297,32 @@ fn gain(
             zero += zero_bytes(m.locals.get(*l).ty())? as i64 + 2;
         }
     }
-    // Removing a function also removes its name-section entry. Counting that
-    // for a function with one call site is fair (the body moves, it does not
-    // grow); counting it for several sites would trade code for names, which
-    // stops paying the moment names are stripped. WS_INLINE_NAMES=2 allows it.
-    let names_mode = knob("WS_INLINE_NAMES", 1);
-    let name = if names_mode == 0 || (names_mode == 1 && n > 1) {
-        0
-    } else {
-        m.funcs
-            .get(g)
-            .name
-            .as_ref()
-            .map_or(0, |s| call_leb + leb_len(s.len() as u64) + s.len()) as i64
-    };
     if n > knob("WS_INLINE_MAX_SITES", i64::MAX) {
         return None;
     }
-    // Function-section entry, code-section length prefix, the body, the name.
-    let removed = 1 + leb_len(body_len as u64) as i64 + body_len as i64 + name;
-    Some(removed + n * call - n * site - in_loop_sites as i64 * zero)
+    // Function-section entry, code-section length prefix, the body.
+    let removed = 1 + leb_len(body_len as u64) as i64 + body_len as i64;
+    Some(removed + n * call - n * site - 2 * arg_sets as i64 - in_loop_sites as i64 * zero)
+}
+
+/// How many of the call's last arguments are a plain `local.get` the inlined
+/// body can read in place (see [`inline_site`]). `written` is the callee's
+/// written locals; without it every `local.get` counts, an upper bound.
+fn forwarded(
+    caller_seq: &[(Instr, InstrLocId)],
+    idx: usize,
+    args: &[LocalId],
+    written: Option<&HashSet<LocalId>>,
+) -> usize {
+    let mut n = 0;
+    while n < args.len() && n < idx {
+        let p = args[args.len() - 1 - n];
+        match &caller_seq[idx - 1 - n].0 {
+            Instr::LocalGet(_) if written.is_none_or(|w| !w.contains(&p)) => n += 1,
+            _ => break,
+        }
+    }
+    n
 }
 
 /// A direct call site: (caller, sequence, index, inside a loop).
@@ -434,23 +445,17 @@ fn inline_site(
         // Arguments passed as a plain `local.get $x` to a parameter the callee
         // never writes need no copy: the body reads `$x` directly. (Nothing in the
         // inlined body can write `$x`; it only touches its own fresh locals.)
-        let mut forwarded: HashMap<LocalId, LocalId> = HashMap::new();
-        let mut first_arg = idx;
-        {
-            let caller_seq = &m.funcs.get(caller).kind.unwrap_local().block(seq).instrs;
-            let mut k = snap.args.len();
-            while k > 0 && first_arg > 0 {
-                let p = snap.args[k - 1];
-                match &caller_seq[first_arg - 1].0 {
-                    Instr::LocalGet(g) if !snap.written.contains(&p) => {
-                        forwarded.insert(p, g.local);
-                        k -= 1;
-                        first_arg -= 1;
-                    }
-                    _ => break,
-                }
-            }
-        }
+        let caller_seq = &m.funcs.get(caller).kind.unwrap_local().block(seq).instrs;
+        let nf = forwarded(caller_seq, idx, &snap.args, Some(&snap.written));
+        let first_arg = idx - nf;
+        let forwarded: HashMap<LocalId, LocalId> = (0..nf)
+            .map(|j| {
+                let Instr::LocalGet(g) = &caller_seq[first_arg + j].0 else {
+                    unreachable!()
+                };
+                (snap.args[snap.args.len() - nf + j], g.local)
+            })
+            .collect();
         let mut locals = HashMap::new();
         for &l in snap.args.iter().chain(&snap.locals) {
             let mapped = match forwarded.get(&l) {
@@ -590,7 +595,14 @@ pub fn run(m: &mut Module, max_rounds: usize) -> Stats {
             }
             let loops = site_map[&g].iter().filter(|s| s.3).count();
             let size = crate::size::function(m, f, call_leb);
-            (gain(m, g, f.args.len(), None, u, size, call_leb, loops)? > 0).then_some(())
+            let arg_sets: usize = site_map[&g]
+                .iter()
+                .map(|&(caller, seq, k, _)| {
+                    let instrs = &m.funcs.get(caller).kind.unwrap_local().block(seq).instrs;
+                    f.args.len() - forwarded(instrs, k, &f.args, None)
+                })
+                .sum();
+            (gain(m, arg_sets, None, u, size, call_leb, loops)? > 0).then_some(())
         })
         .into_iter()
         .filter_map(|(g, ok)| ok.map(|_| g))
@@ -604,10 +616,6 @@ pub fn run(m: &mut Module, max_rounds: usize) -> Stats {
             let loops = sites.iter().filter(|s| s.3).count();
             let size = crate::size::function(m, f, call_leb);
             let snap = Snapshot::take(m, f);
-            match gain(m, g, f.args.len(), Some(&snap), u, size, call_leb, loops) {
-                Some(x) if x > 0 => {}
-                _ => continue,
-            }
             // Find the calls again: inlining other functions into the same
             // caller has moved them within their sequence (sequences stay).
             let mut groups: Vec<(FunctionId, InstrSeqId, bool, Vec<usize>)> = Vec::new();
@@ -631,6 +639,20 @@ pub fn run(m: &mut Module, max_rounds: usize) -> Stats {
             }
             if groups.iter().map(|x| x.3.len()).sum::<usize>() != sites.len() {
                 continue; // should not happen; never delete a function still called
+            }
+            let arg_sets: usize = groups
+                .iter()
+                .flat_map(|(caller, seq, _, at)| {
+                    let instrs = &m.funcs.get(*caller).kind.unwrap_local().block(*seq).instrs;
+                    let snap = &snap;
+                    at.iter().map(move |&k| {
+                        snap.args.len() - forwarded(instrs, k, &snap.args, Some(&snap.written))
+                    })
+                })
+                .sum();
+            match gain(m, arg_sets, Some(&snap), u, size, call_leb, loops) {
+                Some(x) if x > 0 => {}
+                _ => continue,
             }
             for (caller, seq, in_loop, at) in groups {
                 for &k in at.iter().rev() {

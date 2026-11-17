@@ -4,7 +4,8 @@ usage: python3 -I scripts/measure.py [--configs a,b] [--out results.json] [--pro
 
 corpus/manifest.json lists {id, profile, none, opt}: `none` is the worker-build
 output without wasm-opt, `opt` the same build after wasm-opt (-O3 for the fast
-profile, -Oz for small). Every output is validated with wasm-tools.
+profile, -Oz for small). Every output is validated with wasm-tools. "beats
+wasm-opt" compares sizes without the name section, which ships separately.
 """
 import argparse, json, os, re, statistics as st, subprocess, tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -94,7 +95,8 @@ def main():
             if not ok:
                 print(c, "all failed:", next(iter(res[k][c]["error"] for k in keys))[:300]); continue
             med = lambda f: st.median(pct(f(res[k]["__none__"]), f(res[k][c])) for k in ok)
-            beats = sum(res[k][c]["TOTAL"] <= res[k]["__opt__"]["TOTAL"] for k in ok)
+            # The name section ships separately, so compare what does ship.
+            beats = sum(nameless(res[k][c]) <= nameless(res[k]["__opt__"]) for k in ok)
             label = "wasm-opt" if c == "__opt__" else c
             print(f'{label:16s} {med(lambda s: s["TOTAL"]):8.2f} {med(nameless):9.2f} {med(lambda s: s.get("code", 0)):8.2f} '
                   f'{med(lambda s: s.get("data", 0) or 1):8.2f}  {len(keys) - len(ok):6d}  {beats:>6d}/{len(ok)}')

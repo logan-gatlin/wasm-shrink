@@ -101,9 +101,11 @@ impl Pass {
         Pass::Thunks,
         Pass::Dedupe,
         Pass::MergeSimilar,
-        Pass::Inline,
+        // Before inline and fold-tails: addr-cse only sees a frame pointer
+        // defined at the top level of a function, and both nest code. Running
+        // it after inline instead lost about 0.1% of the module.
         Pass::AddrCse,
-        // After addr-cse: folding nests the body, which hides top-level definitions.
+        Pass::Inline,
         Pass::FoldTails,
         // After fold-tails: a folded tail leaves `block … end  br $tail`
         // behind, which branches threads. Running branches before addr-cse as
@@ -274,6 +276,41 @@ mod tests {
         for p in [Pass::RedundantSets, Pass::ConstHoist] {
             assert!(Pass::DEFAULT.contains(&p), "{p}");
         }
+    }
+
+    /// The name section does not ship, so it must not change the code. The
+    /// callee costs more to inline (four argument `local.set`s) than its
+    /// function entry saves; only its long name would have paid for it.
+    #[test]
+    fn names_do_not_change_code() {
+        let name = "x".repeat(200);
+        let wat = format!(
+            "(module
+               (func ${name} (param i32 i32 i32 i32) (result i32)
+                 local.get 0  local.get 1  i32.add  local.get 2  i32.add  local.get 3  i32.add)
+               (func $f (export \"f\") (result i32)
+                 i32.const 1  i32.const 2  i32.const 3  i32.const 4  call ${name}))"
+        );
+        let named = wat::parse_str(&wat).unwrap();
+        let mut m = walrus::Module::from_buffer(&named).unwrap();
+        for f in m.funcs.iter_mut() {
+            f.name = None;
+        }
+        let unnamed = m.emit_wasm();
+        let code = |wasm: &[u8]| {
+            let out = super::shrink(wasm).unwrap();
+            crate::test_util::validate(&out);
+            wasmparser::Parser::new(0)
+                .parse_all(&out)
+                .find_map(|p| match p.unwrap() {
+                    wasmparser::Payload::CodeSectionStart { range, .. } => {
+                        Some(out[range].to_vec())
+                    }
+                    _ => None,
+                })
+                .unwrap()
+        };
+        assert_eq!(code(&named), code(&unnamed));
     }
 
     /// The whole pipeline on a function with something for most passes: the
