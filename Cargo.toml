@@ -8,6 +8,6 @@ edition = "2024"
 
 [workspace.dependencies]
 wasm-shrink = { path = "crates/wasm-shrink" }
-# Unreleased fixes on main after 0.28.0: no empty `else` arms (#336) and
-# visitors that see each field once (#337).
-walrus = { git = "https://github.com/wasm-bindgen/walrus", rev = "fd2782b7264ae69e4798745dfbb85c64df8ca4bd", features = ["parallel"] }
+# Unreleased on main after 0.28.0: no empty `else` arms (#336), visitors that
+# see each field once (#337) and a configurable function order (#342).
+walrus = { git = "https://github.com/wasm-bindgen/walrus", rev = "ed30b7ddb37a5e37576ff86e788d4d7a5302a9ac", features = ["parallel"] }

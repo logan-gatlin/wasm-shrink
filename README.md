@@ -77,7 +77,7 @@ Leaves a value on the stack instead of writing it to a local and reading it stra
 Lets locals whose live ranges don't overlap share one slot, and removes writes that are never read. (0.12 / 0.21)
 
 ### Function reordering
-Runs on the emitted bytes. A function index costs one byte below 128 and two from 128, so the most-referenced functions get the one-byte indices. Turn it off with `--no-reorder`, for example to keep DWARF offsets valid. (0.26 / 0.37; after gzip it costs 0.93 / 0.99)
+Decides the order walrus emits functions in, through its `function_order` hook, so DWARF stays valid. A function index costs one byte below 128 and two from 128, so the most-referenced functions get the one-byte indices. Turn it off with `--no-reorder` to keep walrus's order (largest first). (0.26 / 0.37; after gzip it costs 0.93 / 0.99)
 
 ### `translate-to-exnref` (opt-in)
 Rewrites legacy exception handling (`try`, `catch`, `delegate`, `rethrow`) as `try_table` and `throw_ref`, the same job as binaryen's `--translate-to-exnref`. This is for runtimes such as workerd, which reject modules that mix the two encodings. It is not a size pass, and the output is slightly smaller than binaryen's translation. The CLI enables it with `--translate-to-exnref` and runs it before the other passes. It changes nothing in a module without legacy instructions.

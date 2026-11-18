@@ -8,9 +8,10 @@
 //! let out = wasm_shrink::shrink(&wasm).unwrap();
 //! ```
 //!
-//! To work on a module you already hold, call [`optimize`] and emit the module
-//! yourself; [`reorder_functions`] then works on the emitted bytes. To run a subset of passes or report what each one did, run
-//! [`Pass`]es one at a time:
+//! To work on a module yourself, parse it with a config that
+//! [`reorder_functions`] has set up, call [`optimize`] and emit it. To run a
+//! subset of passes or report what each one did, run [`Pass`]es one at a
+//! time:
 //!
 //! ```no_run
 //! # let mut module = walrus::Module::default();
@@ -33,7 +34,7 @@ mod stack;
 mod test_util;
 mod util;
 
-pub use reorder::reorder_functions;
+pub use reorder::{most_used_first, reorder_functions};
 
 use passes::*;
 use std::fmt;
@@ -248,12 +249,14 @@ pub fn optimize(m: &mut Module) {
     walrus::passes::gc::run(m);
 }
 
-/// Parse `wasm`, [`optimize`] it, emit it and [put the most-used functions
+/// Parse `wasm`, [`optimize`] it and emit it with [the most-used functions
 /// first](reorder_functions).
 pub fn shrink(wasm: &[u8]) -> walrus::Result<Vec<u8>> {
-    let mut m = walrus::ModuleConfig::new().parse(wasm)?;
+    let mut config = walrus::ModuleConfig::new();
+    reorder_functions(&mut config);
+    let mut m = config.parse(wasm)?;
     optimize(&mut m);
-    Ok(reorder_functions(&m.emit_wasm())?.0)
+    Ok(m.emit_wasm())
 }
 
 #[cfg(test)]

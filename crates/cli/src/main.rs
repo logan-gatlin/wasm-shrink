@@ -5,8 +5,8 @@
 //!
 //! With no `--passes`, the default pipeline runs. `--passes none` only
 //! round-trips the module through walrus (the baseline for measurements).
-//! After emitting, the most-used functions are moved first (see
-//! [`wasm_shrink::reorder_functions`]); `--no-reorder` skips that.
+//! The module is emitted with its most-used functions first (see
+//! [`wasm_shrink::most_used_first`]); `--no-reorder` keeps walrus's order.
 //! `--translate-to-exnref` first rewrites legacy exception handling as
 //! `try_table`/`throw_ref` (see [`wasm_shrink::passes::exnref`]).
 
@@ -14,6 +14,8 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use clap::builder::PossibleValuesParser;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use wasm_shrink::Pass;
 
@@ -60,9 +62,19 @@ fn main() -> Result<()> {
         quiet,
     } = Args::parse();
     let wasm = std::fs::read(&input).with_context(|| format!("reading {}", input.display()))?;
-    let mut m = walrus::ModuleConfig::new()
-        .parse(&wasm)
-        .context("parsing module")?;
+    let mut config = walrus::ModuleConfig::new();
+    // What the reorder saved and how long it took, in bytes and nanoseconds.
+    let reorder = Arc::new([AtomicU64::new(0), AtomicU64::new(0)]);
+    if !no_reorder {
+        let record = reorder.clone();
+        config.function_order(move |m, functions| {
+            let t = Instant::now();
+            let saved = wasm_shrink::most_used_first(m, functions);
+            record[0].store(saved, Ordering::Relaxed);
+            record[1].store(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        });
+    }
+    let mut m = config.parse(&wasm).context("parsing module")?;
 
     let mut passes: Vec<Pass> = match list {
         None => Pass::DEFAULT.to_vec(),
@@ -87,19 +99,14 @@ fn main() -> Result<()> {
         }
     }
     walrus::passes::gc::run(&mut m);
-    let mut out = m.emit_wasm();
-    if !no_reorder {
-        let t = Instant::now();
-        let (reordered, saved) =
-            wasm_shrink::reorder_functions(&out).context("reordering functions")?;
-        if !quiet {
-            eprintln!(
-                "{:16} {:>7.1} ms  saved {saved} bytes of function indices",
-                "reorder",
-                t.elapsed().as_secs_f64() * 1e3
-            );
-        }
-        out = reordered;
+    let out = m.emit_wasm();
+    if !no_reorder && !quiet {
+        eprintln!(
+            "{:16} {:>7.1} ms  saved {} bytes of function indices",
+            "reorder",
+            reorder[1].load(Ordering::Relaxed) as f64 / 1e6,
+            reorder[0].load(Ordering::Relaxed),
+        );
     }
     if !quiet {
         eprintln!(

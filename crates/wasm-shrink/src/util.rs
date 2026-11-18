@@ -212,6 +212,9 @@ pub struct Encoded {
 ///
 /// Functions are matched to their emitted index by temporarily giving each a
 /// unique name and reading the name section; the real names are restored.
+///
+/// The emit follows the module's `function_order` closure, if it has one, so
+/// call indices (and so body sizes) are encoded in that order.
 pub fn encode_functions(m: &mut Module) -> Encoded {
     let ids: Vec<FunctionId> = m.funcs.iter().map(|f| f.id()).collect();
     let saved: Vec<Option<String>> = ids.iter().map(|&id| m.funcs.get(id).name.clone()).collect();
