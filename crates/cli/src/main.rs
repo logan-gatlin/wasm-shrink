@@ -63,7 +63,6 @@ fn main() -> Result<()> {
     } = Args::parse();
     let wasm = std::fs::read(&input).with_context(|| format!("reading {}", input.display()))?;
     let mut config = walrus::ModuleConfig::new();
-    // What the reorder saved and how long it took, in bytes and nanoseconds.
     let reorder = Arc::new([AtomicU64::new(0), AtomicU64::new(0)]);
     if !no_reorder {
         let record = reorder.clone();
