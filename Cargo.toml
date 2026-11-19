@@ -1,5 +1,6 @@
 [workspace]
-members = ["crates/wasm-shrink", "crates/cli"]
+members = ["crates/wasm-shrink", "crates/cli", "crates/fuzz"]
+exclude = ["fuzz"]
 resolver = "3"
 
 [workspace.package]

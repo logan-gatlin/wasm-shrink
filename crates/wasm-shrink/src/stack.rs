@@ -93,11 +93,18 @@ pub fn effect(m: &Module, f: &LocalFunction, i: &Instr) -> Option<(usize, usize)
         }
         Instr::LocalGet(_) | Instr::GlobalGet(_) | Instr::Const(_) => (0, 1),
         Instr::LocalSet(_) | Instr::GlobalSet(_) | Instr::Drop(_) => (1, 0),
-        Instr::LocalTee(_)
-        | Instr::Unop(_)
-        | Instr::Load(_)
-        | Instr::LoadSimd(_)
-        | Instr::MemoryGrow(_) => (1, 1),
+        Instr::LocalTee(_) | Instr::Unop(_) | Instr::Load(_) | Instr::MemoryGrow(_) => (1, 1),
+        Instr::LoadSimd(l) => {
+            use LoadSimdKind::*;
+            match l.kind {
+                V128Load8Lane(_) | V128Load16Lane(_) | V128Load32Lane(_) | V128Load64Lane(_) => {
+                    (2, 1)
+                }
+                V128Store8Lane(_) | V128Store16Lane(_) | V128Store32Lane(_)
+                | V128Store64Lane(_) => (2, 0),
+                _ => (1, 1),
+            }
+        }
         Instr::Binop(_) => (2, 1),
         Instr::TernOp(_) | Instr::Select(_) | Instr::Cmpxchg(_) | Instr::AtomicWait(_) => (3, 1),
         Instr::Store(_) | Instr::TableSet(_) => (2, 0),

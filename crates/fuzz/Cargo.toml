@@ -1,0 +1,15 @@
+[package]
+name = "wasm-shrink-fuzz"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+wasm-shrink.workspace = true
+walrus.workspace = true
+arbitrary = "1.4"
+wasm-smith = { version = "0.245", features = ["wasmparser"] }
+wasmparser = "0.245"
+wasm-encoder = "0.245"
+wat = "1"
+wasmtime = { version = "50", default-features = false, features = ["cranelift", "runtime", "gc", "gc-drc", "threads", "std"] }

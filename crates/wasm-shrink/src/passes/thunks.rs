@@ -51,7 +51,8 @@ pub fn run(m: &mut Module) -> Stats {
         }
     }
     // Break cycles (a -> b -> a): drop one edge of each.
-    let keys: Vec<_> = map.keys().copied().collect();
+    let mut keys: Vec<_> = map.keys().copied().collect();
+    keys.sort_by_key(|f| f.index());
     for k in keys {
         let mut seen = vec![k];
         let mut cur = k;
@@ -69,4 +70,27 @@ pub fn run(m: &mut Module) -> Stats {
         m.funcs.delete(t);
     }
     Stats { removed: map.len() }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn breaks_a_forwarding_cycle_the_same_way_every_time() {
+        let wasm = wat::parse_str(
+            "(module
+               (func $a (export \"a\") (param i32) local.get 0 call $b)
+               (func $b (export \"b\") (param i32) local.get 0 call $c)
+               (func $c (export \"c\") (param i32) local.get 0 call $a))",
+        )
+        .unwrap();
+        let once = |_| {
+            let mut m = walrus::Module::from_buffer(&wasm).unwrap();
+            super::run(&mut m);
+            crate::test_util::emit(&mut m)
+        };
+        let first = once(0);
+        for i in 1..20 {
+            assert_eq!(once(i), first);
+        }
+    }
 }

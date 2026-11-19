@@ -1,0 +1,28 @@
+[package]
+name = "wasm-shrink-fuzz-targets"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+wasm-shrink-fuzz = { path = "../crates/fuzz" }
+
+[[bin]]
+name = "shrink"
+path = "fuzz_targets/shrink.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "eh"
+path = "fuzz_targets/eh.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

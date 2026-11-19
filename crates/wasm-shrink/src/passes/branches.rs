@@ -106,7 +106,16 @@ fn height(
     loops: &HashSet<InstrSeqId>,
     instrs: &[(Instr, InstrLocId)],
 ) -> Option<usize> {
-    let mut h = 0usize;
+    height_from(m, f, loops, 0, instrs)
+}
+
+fn height_from(
+    m: &Module,
+    f: &LocalFunction,
+    loops: &HashSet<InstrSeqId>,
+    mut h: usize,
+    instrs: &[(Instr, InstrLocId)],
+) -> Option<usize> {
     for (i, _) in instrs {
         let (pop, push) = effect_with_br_if(m, f, loops, i)?;
         h = h.checked_sub(pop)? + push;
@@ -142,11 +151,14 @@ fn invert(op: BinaryOp) -> Option<BinaryOp> {
     })
 }
 
-fn result_arity(m: &Module, f: &LocalFunction, s: InstrSeqId) -> usize {
+fn arity(m: &Module, f: &LocalFunction, s: InstrSeqId) -> (usize, usize) {
     match f.block(s).ty {
-        InstrSeqType::Simple(None) => 0,
-        InstrSeqType::Simple(Some(_)) => 1,
-        InstrSeqType::MultiValue(t) => m.types.get(t).results().len(),
+        InstrSeqType::Simple(None) => (0, 0),
+        InstrSeqType::Simple(Some(_)) => (0, 1),
+        InstrSeqType::MultiValue(t) => {
+            let t = m.types.get(t);
+            (t.params().len(), t.results().len())
+        }
     }
 }
 
@@ -237,9 +249,10 @@ fn function(m: &Module, f: &mut LocalFunction, stats: &mut Stats) -> bool {
     for s in seqs(f) {
         let instrs = &f.block(s).instrs;
         let n = instrs.len();
+        let (params, results) = arity(m, f, s);
         if !is_loop.contains(&s)
             && matches!(instrs.last(), Some((Instr::Br(b), _)) if b.block == s)
-            && height(m, f, &is_loop, &instrs[..n - 1]) == Some(result_arity(m, f, s))
+            && height_from(m, f, &is_loop, params, &instrs[..n - 1]) == Some(results)
         {
             f.block_mut(s).instrs.pop();
             stats.trailing_br += 1;
@@ -545,5 +558,42 @@ mod tests {
              end
              i32.const 2  call $g";
         check(body, body);
+    }
+
+    #[test]
+    fn keeps_a_trailing_br_that_drops_a_block_parameter() {
+        check(
+            "local.get 0  block (param i32)  br 0  end",
+            "local.get 0  block (type 0) (param i32)  br 0  end",
+        );
+    }
+
+    #[test]
+    fn removes_a_trailing_br_once_the_parameter_is_used() {
+        check(
+            "local.get 0  block (param i32)  call $g  br 0  end",
+            "local.get 0  call $g",
+        );
+    }
+
+    #[test]
+    fn counts_the_vector_a_lane_load_pops() {
+        let wat = "(module (memory 1) (func $f (param i32 v128) (result v128)
+             block (result v128)
+               local.get 0  local.get 1  v128.load8_lane 0
+               local.get 0  local.get 1  v128.load8_lane 0
+               drop
+               br 0
+             end))";
+        assert_eq!(
+            run(wat, |m| {
+                super::run(m);
+            }),
+            flat(
+                "local.get 0  local.get 1  v128.load8_lane 0
+                 local.get 0  local.get 1  v128.load8_lane 0
+                 drop"
+            )
+        );
     }
 }
