@@ -16,11 +16,12 @@
 //! ```no_run
 //! # let mut module = walrus::Module::default();
 //! use wasm_shrink::Pass;
+//! wasm_shrink::gc(&mut module);
 //! for pass in Pass::DEFAULT {
 //!     let stats = pass.run(&mut module);
 //!     eprintln!("{pass}: {stats}");
 //! }
-//! walrus::passes::gc::run(&mut module);
+//! wasm_shrink::gc(&mut module);
 //! ```
 //!
 //! Output is deterministic: the same input always produces the same bytes,
@@ -35,6 +36,7 @@ mod test_util;
 mod util;
 
 pub use reorder::{most_used_first, reorder_functions};
+pub use util::gc;
 
 use passes::*;
 use std::fmt;
@@ -147,8 +149,8 @@ impl Pass {
 
     /// Run the pass on `m`.
     ///
-    /// Passes can leave unused items behind; run [`walrus::passes::gc`]
-    /// after the last one.
+    /// Passes can leave unused items behind, and do better on a module
+    /// without any: run [`gc`] before the first pass and after the last.
     pub fn run(self, m: &mut Module) -> Stats {
         match self {
             Pass::MemoryPacking => Stats::MemoryPacking(memory_packing::run(m)),
@@ -241,12 +243,15 @@ impl fmt::Display for Stats {
     }
 }
 
-/// Run the [default pipeline](Pass::DEFAULT), then walrus's GC.
+/// Run [`gc`], the [default pipeline](Pass::DEFAULT), then [`gc`] again.
 pub fn optimize(m: &mut Module) {
+    // First, so that no pass counts an unused function as a caller or
+    // merges a function with one.
+    gc(m);
     for pass in Pass::DEFAULT {
         pass.run(m);
     }
-    walrus::passes::gc::run(m);
+    gc(m);
 }
 
 /// Parse `wasm`, [`optimize`] it and emit it with [the most-used functions

@@ -17,6 +17,8 @@
 //! never writes it again, so each `local.get` yields the constant.
 
 use crate::passes::branches::children;
+use crate::size::sleb_len;
+use crate::util::{MAX_LOCALS, locals_that_fit};
 use std::collections::{HashMap, HashSet};
 use walrus::ir::*;
 use walrus::{LocalFunction, LocalId, Module, ValType};
@@ -25,16 +27,6 @@ use walrus::{LocalFunction, LocalId, Module, ValType};
 pub struct Stats {
     pub constants: usize,
     pub uses: usize,
-}
-
-fn sleb_len(v: i64) -> usize {
-    let mut n = 1;
-    let mut v = v;
-    while !(-64..64).contains(&v) {
-        v >>= 7;
-        n += 1;
-    }
-    n
 }
 
 /// A hashable constant: its type and bits. `None` for `v128`, which is rare
@@ -86,7 +78,9 @@ fn plan(m: &Module, f: &LocalFunction) -> Vec<(ValType, u64)> {
     // Types that already have a non-parameter local: one more of the same
     // type is free to declare, a new type costs a 2-byte group.
     let mut declared: HashSet<ValType> = HashSet::new();
+    let mut instrs = 0;
     for s in seqs(f) {
+        instrs += f.block(s).instrs.len();
         for (i, _) in &f.block(s).instrs {
             match i {
                 Instr::Const(c) => {
@@ -122,6 +116,11 @@ fn plan(m: &Module, f: &LocalFunction) -> Vec<(ValType, u64)> {
         _ => 3,
     };
     chosen.sort_by_key(|&(ty, bits)| (rank(ty), bits));
+    // Every local is a parameter or mentioned by an instruction, so there is
+    // nearly always room without counting them.
+    if f.args.len() + instrs + chosen.len() > MAX_LOCALS {
+        chosen.truncate(locals_that_fit(f, chosen.len()));
+    }
     chosen
 }
 

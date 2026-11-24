@@ -23,14 +23,9 @@ use walrus::{ConstExpr, DataId, DataKind, MemoryId, Module};
 /// Bytes a new active segment costs: flags, `i32.const`, offset (signed LEB),
 /// `end`, length LEB. A zero run must be longer than this to be worth a split.
 fn header_len(offset: u64, len: usize) -> usize {
-    let mut n = 1;
-    let mut v = offset as i64;
-    while !(-64..64).contains(&v) {
-        v >>= 7;
-        n += 1;
-    }
-    3 + n + crate::util::leb_len(len as u64)
+    3 + crate::size::sleb_len(offset as i64) + crate::util::leb_len(len as u64)
 }
+
 /// Engines reject modules with more than 100,000 data segments.
 const MAX_SEGMENTS: usize = 100_000;
 
@@ -93,12 +88,19 @@ pub fn run(m: &mut Module) -> Stats {
             continue;
         }
         let mut segs: Vec<(DataId, u64, u64)> = Vec::new();
+        let memory = m.memories.get(mem);
+        let initial_bytes = u128::from(memory.initial) << memory.page_size_log2.unwrap_or(16);
         let mut ok = true;
         for d in m.data.iter() {
             match &d.kind {
                 DataKind::Active { memory, .. } if *memory == mem => match offset_of(&d.kind) {
-                    Some((_, off)) => segs.push((d.id(), off, off + d.value.len() as u64)),
-                    None => ok = false,
+                    Some((_, off))
+                        if let Some(end) = off.checked_add(d.value.len() as u64)
+                            && u128::from(end) <= initial_bytes =>
+                    {
+                        segs.push((d.id(), off, end))
+                    }
+                    _ => ok = false,
                 },
                 _ => {}
             }
@@ -119,14 +121,24 @@ pub fn run(m: &mut Module) -> Stats {
             // (its length LEB is estimated at 2 bytes).
             let mut ranges = nonzero_ranges(&value, |start| header_len(base + start as u64, 128));
             // Respect the segment limit by merging the closest ranges first.
-            while ranges.len() > budget + 1 {
-                let (k, _) = ranges
+            if ranges.len() > budget + 1 {
+                let mut gaps: Vec<_> = ranges
                     .windows(2)
                     .enumerate()
-                    .min_by_key(|(_, w)| w[1].0 - w[0].1)
-                    .unwrap();
-                ranges[k].1 = ranges[k + 1].1;
-                ranges.remove(k + 1);
+                    .map(|(i, w)| (w[1].0 - w[0].1, i + 1))
+                    .collect();
+                let split = gaps.len() - budget - 1;
+                gaps.select_nth_unstable(split);
+                let keep: HashSet<_> = gaps.iter().rev().take(budget).map(|g| g.1).collect();
+                let mut merged = vec![ranges[0]];
+                for (index, range) in ranges.into_iter().enumerate().skip(1) {
+                    if keep.contains(&index) {
+                        merged.push(range);
+                    } else {
+                        merged.last_mut().unwrap().1 = range.1;
+                    }
+                }
+                ranges = merged;
             }
             if ranges.is_empty() {
                 stats.zero_bytes_dropped += value.len();

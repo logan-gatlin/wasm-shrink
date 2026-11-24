@@ -32,7 +32,7 @@ fn seeds() {
         "failing seeds (rerun one with FUZZ_SEED=n): {failed:?}"
     );
     assert!(
-        executed * 2 >= total,
+        total > 0 && executed * 2 >= total,
         "only {executed} of {total} cases ran to completion"
     );
 }

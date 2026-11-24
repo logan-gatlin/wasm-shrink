@@ -8,7 +8,7 @@ const USAGE: &str = "usage:
   fuzz-case seeds DIR N                 write the seeded test's first N inputs to DIR
   fuzz-case emit IN.wasm PASSES -o OUT.wasm
                                         write the module after PASSES (no reorder)
-  fuzz-case coverage N                  count the seeded inputs each pass changes
+  fuzz-case coverage N                  count how the first N seeded inputs end, and the ones each pass changes
   fuzz-case eh SEED|DATA -o IN.wasm     write the exception-handling case a seed or fuzz input generates
                                         and print its passes
   fuzz-case eh-check IN.wasm --passes a,b
@@ -70,16 +70,26 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             let n: u64 = n.parse().map_err(|_| format!("bad count {n}"))?;
             let mut hits = vec![0; Pass::ALL.len()];
             let mut cases = 0;
+            let mut ends = std::collections::BTreeMap::new();
             for seed in 0..n {
                 let Ok(case) = Case::generate(&wasm_shrink_fuzz::seed_data(seed)) else {
                     continue;
                 };
                 cases += 1;
+                let end = match check_case(&case) {
+                    Ok(c) => format!("{c:?}"),
+                    Err(_) => "Failed".into(),
+                };
+                *ends.entry(end).or_insert(0) += 1;
                 for p in wasm_shrink_fuzz::changed_by(&case.wasm) {
                     hits[Pass::ALL.iter().position(|&q| q == p).unwrap()] += 1;
                 }
             }
             println!("{cases} cases");
+            for (end, count) in ends {
+                println!("{count:>6} {end}");
+            }
+            println!("changed by");
             for (p, h) in Pass::ALL.iter().zip(hits) {
                 println!("{:>6} {p}", h);
             }
@@ -125,10 +135,10 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     }
 }
 
-fn verdict(r: Result<(), String>) -> Result<ExitCode, String> {
+fn verdict(r: Result<wasm_shrink_fuzz::Checked, String>) -> Result<ExitCode, String> {
     match r {
-        Ok(()) => {
-            println!("ok");
+        Ok(status) => {
+            println!("{status:?}");
             Ok(ExitCode::SUCCESS)
         }
         Err(e) => {

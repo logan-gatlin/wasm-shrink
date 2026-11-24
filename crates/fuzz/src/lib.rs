@@ -2,13 +2,14 @@ pub mod eh;
 mod plant;
 
 use arbitrary::{Result as ArbResult, Unstructured};
+use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock};
 use wasm_shrink::Pass;
 use wasmtime::{
-    Engine, Extern, GcHeapOutOfMemory, Linker, Store, StoreLimits, StoreLimitsBuilder, Trap, Val,
-    ValType,
+    Engine, Extern, Func, GcHeapOutOfMemory, Linker, Store, StoreLimits, StoreLimitsBuilder, Tag,
+    Trap, Val, ValType,
 };
 
 const FUEL: u64 = 1_000_000;
@@ -120,10 +121,15 @@ pub fn check(data: &[u8]) -> Checked {
 }
 
 pub fn check_case(case: &Case) -> Result<Checked, String> {
+    // An invalid input would only show up as a case that cannot run.
+    validate(&case.wasm).map_err(|e| format!("input does not validate: {e}"))?;
     let Some(out) = shrink(&case.wasm, &case.passes, case.reorder, false) else {
         return Ok(Checked::Unsupported);
     };
     validate(&out.wasm).map_err(|e| format!("output does not validate: {e}"))?;
+    if opaque_sections(&case.wasm) != opaque_sections(&out.wasm) {
+        return Err("custom section contents changed".into());
+    }
 
     let again = shrink(&case.wasm, &case.passes, case.reorder, false).unwrap();
     if again.wasm != out.wasm {
@@ -139,32 +145,113 @@ pub fn check_case(case: &Case) -> Result<Checked, String> {
         check_reorder(&out.wasm)?;
     }
 
-    let Some(expected) = run(&case.wasm, &case.args)? else {
-        return Ok(Checked::Unsupported);
+    if never_grows(&case.passes) {
+        let plain = shrink(&case.wasm, &[], case.reorder, false).unwrap();
+        let (before, after) = (shipped_bytes(&plain.wasm), shipped_bytes(&out.wasm));
+        if after > before {
+            return Err(format!(
+                "output is {} bytes larger than the input ({before} -> {after})",
+                after - before
+            ));
+        }
+    }
+
+    // A call that runs out of fuel or stack says nothing, and leaves the
+    // instance in a state the output need not reach. Run the input again
+    // without each such call, then the output without the same calls.
+    let mut skip = HashSet::new();
+    let expected = loop {
+        let Some(trace) = run(&case.wasm, &case.args, &skip)? else {
+            return Ok(Checked::Unsupported);
+        };
+        match trace.end {
+            End::Call(k) if skip.len() < MAX_SKIPS => skip.insert(k),
+            _ => break trace,
+        };
     };
-    let Some(actual) = run(&out.wasm, &case.args)? else {
-        return Ok(Checked::Inconclusive);
+    let Some(actual) = run(&out.wasm, &case.args, &skip)? else {
+        return Err("runtime accepts input but cannot run optimized module".into());
     };
-    let (Trace::Done(expected), Trace::Done(actual)) = (expected, actual) else {
-        return Ok(Checked::Inconclusive);
-    };
-    if expected != actual {
+    // A run that still stopped early has to agree with the other one up to
+    // where it stopped.
+    let complete = expected.end == End::Done && actual.end == End::Done;
+    if let Some(at) = first_difference(&expected, &actual) {
         let round_trip = shrink(&case.wasm, &[], false, false).unwrap();
-        let culprit = match run(&round_trip.wasm, &case.args)? {
-            Some(Trace::Done(t)) if t != expected => "the walrus round trip",
+        let culprit = match run(&round_trip.wasm, &case.args, &skip)? {
+            Some(t) if first_difference(&expected, &t).is_some() => "the walrus round trip",
             _ => "wasm-shrink",
         };
         return Err(format!(
             "{culprit} changes behaviour\n{}",
-            diff(&expected, &actual)
+            diff(&expected.events, &actual.events, at)
         ));
     }
-    Ok(Checked::Executed)
+    Ok(if complete {
+        Checked::Executed
+    } else {
+        Checked::Inconclusive
+    })
+}
+
+/// The index of the first event the two runs disagree on.
+fn first_difference(expected: &Trace, actual: &Trace) -> Option<usize> {
+    let mut ids = HashMap::new();
+    let shared = expected.events.len().min(actual.events.len());
+    (0..shared)
+        .find(|&k| !same_event(&expected.events[k], &actual.events[k], &mut ids))
+        .or_else(|| {
+            let complete = expected.end == End::Done && actual.end == End::Done;
+            (complete && expected.events.len() != actual.events.len()).then_some(shared)
+        })
+}
+
+/// Stands in front of a function's identity number in an event. Names are
+/// printed escaped, so it only ever comes from [`show`].
+const FUNC: char = '\u{1}';
+
+/// Whether two events are the same up to function identity. Passes merge
+/// equivalent functions, so two functions of the input may be one function in
+/// the output, but one function never becomes two: `ids` maps each input
+/// identity to the output identity it had the first time.
+fn same_event<'a>(expected: &'a str, actual: &'a str, ids: &mut HashMap<&'a str, &'a str>) -> bool {
+    let id = |s: &'a str| s.split_at(s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len()));
+    let (mut e, mut a) = (expected.split(FUNC), actual.split(FUNC));
+    if e.next() != a.next() {
+        return false;
+    }
+    loop {
+        match (e.next(), a.next()) {
+            (None, None) => return true,
+            (Some(e), Some(a)) => {
+                let ((e, e_rest), (a, a_rest)) = (id(e), id(a));
+                if e_rest != a_rest || *ids.entry(e).or_insert(a) != a {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
 }
 
 pub struct Shrunk {
     pub wasm: Vec<u8>,
     pub saved: u64,
+}
+
+fn opaque_sections(wasm: &[u8]) -> Vec<(&str, &[u8])> {
+    let mut sections: Vec<_> = wasmparser::Parser::new(0)
+        .parse_all(wasm)
+        .filter_map(|p| match p.ok()? {
+            wasmparser::Payload::CustomSection(s)
+                if !matches!(s.name(), "name" | "producers") && !s.name().starts_with(".debug") =>
+            {
+                Some((s.name(), s.data()))
+            }
+            _ => None,
+        })
+        .collect();
+    sections.sort_by_key(|s| s.0);
+    sections
 }
 
 pub fn shrink(wasm: &[u8], passes: &[Pass], reorder: bool, names: bool) -> Option<Shrunk> {
@@ -187,10 +274,11 @@ pub fn shrink(wasm: &[u8], passes: &[Pass], reorder: bool, names: bool) -> Optio
             m.locals.get_mut(id).name = Some(format!("{long}{i}"));
         }
     }
+    wasm_shrink::gc(&mut m);
     for &p in passes {
         p.run(&mut m);
     }
-    walrus::passes::gc::run(&mut m);
+    wasm_shrink::gc(&mut m);
     let wasm = m.emit_wasm();
     Some(Shrunk {
         wasm,
@@ -243,6 +331,27 @@ fn index_bytes(wasm: &[u8]) -> u64 {
     n
 }
 
+/// The size of `wasm` without its custom sections.
+/// Whether the passes promise an output no larger than their input. Every
+/// pass is there to make the module smaller, with two exceptions:
+/// `translate-to-exnref` changes the encoding, not the size, and `inline`
+/// counts on a later `branches` to remove the `br`s that it makes of a
+/// callee's `return`s.
+fn never_grows(passes: &[Pass]) -> bool {
+    let last = |pass| passes.iter().rposition(|&p| p == pass);
+    !passes.contains(&Pass::TranslateToExnref) && last(Pass::Inline) <= last(Pass::Branches)
+}
+
+fn shipped_bytes(wasm: &[u8]) -> usize {
+    wasmparser::Parser::new(0)
+        .parse_all(wasm)
+        .filter_map(|p| match p.ok()? {
+            wasmparser::Payload::CustomSection(_) => None,
+            p => Some(p.as_section()?.1.len()),
+        })
+        .sum()
+}
+
 pub fn changed_by(wasm: &[u8]) -> Vec<Pass> {
     let Some(base) = shrink(wasm, &[], false, false) else {
         return Vec::new();
@@ -277,17 +386,12 @@ pub(crate) fn sections_without_names(wasm: &[u8]) -> Vec<&[u8]> {
     out
 }
 
-fn diff(expected: &[String], actual: &[String]) -> String {
-    let at = expected
-        .iter()
-        .zip(actual)
-        .position(|(a, b)| a != b)
-        .unwrap_or(expected.len().min(actual.len()));
+fn diff(expected: &[String], actual: &[String], at: usize) -> String {
     let from = at.saturating_sub(3);
     let show = |t: &[String]| {
         t[from.min(t.len())..(at + 3).min(t.len())]
             .iter()
-            .map(|e| format!("    {e}"))
+            .map(|e| format!("    {}", e.replace(FUNC, "func#")))
             .collect::<Vec<_>>()
             .join("\n")
     };
@@ -298,10 +402,23 @@ fn diff(expected: &[String], actual: &[String]) -> String {
     )
 }
 
-enum Trace {
-    Done(Vec<String>),
-    Inconclusive,
+/// What a module did, and where the run stopped.
+struct Trace {
+    events: Vec<String>,
+    end: End,
 }
+
+#[derive(PartialEq)]
+enum End {
+    Done,
+    /// Instantiation ran out of fuel or stack.
+    Instantiation,
+    /// So did the call with this index.
+    Call(usize),
+}
+
+/// How many calls of one case can be left out for running out of fuel.
+const MAX_SKIPS: usize = 8;
 
 static ENGINE: LazyLock<Engine> = LazyLock::new(|| {
     let mut c = wasmtime::Config::new();
@@ -325,6 +442,8 @@ static ENGINE: LazyLock<Engine> = LazyLock::new(|| {
 
 struct Host {
     events: Vec<String>,
+    /// Functions seen so far, numbered in the order [`show`] met them.
+    funcs: HashMap<usize, usize>,
     counter: i32,
     limits: StoreLimits,
 }
@@ -350,7 +469,8 @@ fn step(r: wasmtime::Result<()>) -> Step {
     }
 }
 
-fn run(wasm: &[u8], args: &[u8]) -> Result<Option<Trace>, String> {
+/// Instantiate `wasm` and call its exports, except the calls in `skip`.
+fn run(wasm: &[u8], args: &[u8], skip: &HashSet<usize>) -> Result<Option<Trace>, String> {
     let Ok(module) = wasmtime::Module::new(&ENGINE, wasm) else {
         return Ok(None);
     };
@@ -358,6 +478,7 @@ fn run(wasm: &[u8], args: &[u8]) -> Result<Option<Trace>, String> {
         &ENGINE,
         Host {
             events: Vec::new(),
+            funcs: Default::default(),
             counter: 0,
             limits: StoreLimitsBuilder::new()
                 .memory_size(16 << 20)
@@ -392,7 +513,7 @@ fn run(wasm: &[u8], args: &[u8]) -> Result<Option<Trace>, String> {
                     host.counter = host.counter.wrapping_add(1);
                     let args: Vec<String> = params.iter().map(show_plain).collect();
                     host.events
-                        .push(format!("host {name}({})", args.join(", ")));
+                        .push(format!("host {name:?}({})", args.join(", ")));
                     let n = host.counter;
                     for r in results.iter_mut() {
                         match r {
@@ -410,52 +531,148 @@ fn run(wasm: &[u8], args: &[u8]) -> Result<Option<Trace>, String> {
     let instance = match linker.instantiate(&mut store, &module) {
         Ok(i) => i,
         Err(e) => {
-            return Ok(Some(match step(Err(e)) {
-                Step::Inconclusive => Trace::Inconclusive,
-                Step::Error => return Ok(None),
-                Step::Trap(_) => return Ok(None),
+            let mut events = std::mem::take(&mut store.data_mut().events);
+            let end = match step(Err(e)) {
+                Step::Inconclusive => End::Instantiation,
+                Step::Trap(t) => {
+                    events.push(format!("instantiation: {t}"));
+                    End::Done
+                }
+                Step::Error => {
+                    events.push(format!("instantiation: {}", error(&mut store, &[])));
+                    End::Done
+                }
                 Step::Ok => unreachable!(),
-            }));
+            };
+            return Ok(Some(Trace { events, end }));
         }
     };
-    let mut trace = std::mem::take(&mut store.data_mut().events);
+    let mut events = std::mem::take(&mut store.data_mut().events);
+    events.push("instantiated".into());
 
-    let mut u = Unstructured::new(args);
-    let exports: Vec<(String, Extern)> = instance
+    let mut exports: Vec<(String, Extern)> = instance
         .exports(&mut store)
         .map(|e| (e.name().to_string(), e.into_extern()))
         .collect();
+    exports.sort_by(|a, b| a.0.cmp(&b.0));
+    for (name, ext) in &exports {
+        if let Extern::Func(f) = ext {
+            let f = show(&mut store, &Val::FuncRef(Some(*f)));
+            events.push(format!("export {name:?}: {f}"));
+        }
+    }
+    state(&mut store, &exports, &mut events);
+
+    let mut u = Unstructured::new(args);
+    let mut calls: Vec<(String, Func, Vec<Val>)> = Vec::new();
     for (name, ext) in &exports {
         let Extern::Func(func) = ext else { continue };
         let ty = func.ty(&store);
-        let Some(params) = ty
+        let Some(random) = ty
             .params()
             .map(|t| arbitrary_val(&mut u, &t))
             .collect::<Option<Vec<_>>>()
         else {
             continue;
         };
-        let mut results: Vec<Val> = ty
+        // Zero and one take both arms of most conditions, whatever the
+        // random arguments were.
+        let fixed = [0, 1].map(|n| probe(&ty, n)).into_iter().flatten();
+        let probes = if random.is_empty() { None } else { Some(fixed) };
+        calls.push((format!("{name:?}"), *func, random));
+        for params in probes.into_iter().flatten() {
+            calls.push((format!("{name:?}"), *func, params));
+        }
+    }
+    // A function can be reachable through a table alone.
+    for (name, ext) in &exports {
+        let Extern::Table(table) = ext else { continue };
+        for slot in 0..table.size(&store).min(TABLE_CALLS) {
+            let Some(wasmtime::Ref::Func(Some(func))) = table.get(&mut store, slot) else {
+                continue;
+            };
+            if let Some(params) = probe(&func.ty(&store), slot as i32) {
+                calls.push((format!("{name:?}[{slot}]"), func, params));
+            }
+        }
+    }
+    for (index, (name, func, params)) in calls.into_iter().enumerate() {
+        let args: Vec<String> = params.iter().map(show_plain).collect();
+        if skip.contains(&index) {
+            events.push(format!("call {name}({}) skipped", args.join(", ")));
+            continue;
+        }
+        let mut results: Vec<Val> = func
+            .ty(&store)
             .results()
             .map(|t| Val::default_for_ty(&t).unwrap_or(Val::I32(0)))
             .collect();
         store.set_fuel(FUEL).unwrap();
         let r = func.call(&mut store, &params, &mut results);
-        trace.append(&mut store.data_mut().events);
+        events.append(&mut store.data_mut().events);
         let outcome = match step(r) {
-            Step::Inconclusive => return Ok(Some(Trace::Inconclusive)),
+            Step::Inconclusive => {
+                return Ok(Some(Trace {
+                    events,
+                    end: End::Call(index),
+                }));
+            }
             Step::Trap(t) => t,
-            Step::Error => "error".into(),
+            Step::Error => error(&mut store, &exports),
             Step::Ok => {
                 let r: Vec<String> = results.iter().map(|v| show(&mut store, v)).collect();
                 format!("-> {}", r.join(", "))
             }
         };
-        let args: Vec<String> = params.iter().map(show_plain).collect();
-        trace.push(format!("call {name}({}) {outcome}", args.join(", ")));
-        state(&mut store, &exports, &mut trace);
+        events.push(format!("call {name}({}) {outcome}", args.join(", ")));
+        state(&mut store, &exports, &mut events);
     }
-    Ok(Some(Trace::Done(trace)))
+    Ok(Some(Trace {
+        events,
+        end: End::Done,
+    }))
+}
+
+/// How many slots of each exported table get called.
+const TABLE_CALLS: u64 = 16;
+
+/// Arguments for a function of type `ty`: `n` for every integer, the default
+/// for everything else. `None` if a parameter has no default.
+fn probe(ty: &wasmtime::FuncType, n: i32) -> Option<Vec<Val>> {
+    ty.params()
+        .map(|t| match t {
+            ValType::I32 => Some(Val::I32(n)),
+            ValType::I64 => Some(Val::I64(n.into())),
+            _ => Val::default_for_ty(&t),
+        })
+        .collect()
+}
+
+/// A failure that is not a trap: an exception nothing caught, with its tag
+/// (by export name) and payload.
+fn error(store: &mut Store<Host>, exports: &[(String, Extern)]) -> String {
+    let Some(exn) = store.take_pending_exception() else {
+        return "error".into();
+    };
+    let Ok(tag) = exn.tag(&mut *store) else {
+        return "throw".into();
+    };
+    let name = exports.iter().find_map(|(name, e)| match e {
+        Extern::Tag(t) if Tag::eq(t, &tag, &*store) => Some(format!("{name:?}")),
+        _ => None,
+    });
+    let count = tag.ty(&*store).ty().params().len();
+    let fields: Vec<String> = (0..count)
+        .map(|i| match exn.field(&mut *store, i) {
+            Ok(v) => show(store, &v),
+            Err(_) => "?".into(),
+        })
+        .collect();
+    format!(
+        "throw {}({})",
+        name.as_deref().unwrap_or("an unexported tag"),
+        fields.join(", ")
+    )
 }
 
 fn arbitrary_val(u: &mut Unstructured, ty: &ValType) -> Option<Val> {
@@ -482,7 +699,13 @@ fn show_plain(v: &Val) -> String {
 
 fn show(store: &mut Store<Host>, v: &Val) -> String {
     match v {
-        Val::FuncRef(f) => if f.is_some() { "funcref" } else { "null" }.into(),
+        Val::FuncRef(Some(f)) => {
+            let raw = f.to_raw(&mut *store).addr();
+            let ids = &mut store.data_mut().funcs;
+            let next = ids.len();
+            format!("{FUNC}{}", ids.entry(raw).or_insert(next))
+        }
+        Val::FuncRef(None) => "null".into(),
         Val::ExternRef(r) => if r.is_some() { "externref" } else { "null" }.into(),
         Val::AnyRef(None) | Val::ExnRef(None) | Val::ContRef(None) => "null".into(),
         Val::AnyRef(Some(r)) => match r.as_i31(&mut *store) {
@@ -501,33 +724,36 @@ fn state(store: &mut Store<Host>, exports: &[(String, Extern)], trace: &mut Vec<
             Extern::Memory(m) => {
                 let data = m.data(&*store);
                 trace.push(format!(
-                    "memory {name}: {} bytes, {:#x}",
+                    "memory {name:?}: {} bytes, {:#x}",
                     data.len(),
                     hash(data)
                 ));
             }
             Extern::SharedMemory(m) => {
-                let data: Vec<u8> = m.data().iter().map(|b| unsafe { *b.get() }).collect();
+                let data = m.data();
+                let bytes = data
+                    .iter()
+                    .map(|b| unsafe { AtomicU8::from_ptr(b.get()) }.load(Ordering::Relaxed));
                 trace.push(format!(
-                    "memory {name}: {} bytes, {:#x}",
+                    "memory {name:?}: {} bytes, {:#x}",
                     data.len(),
-                    hash(&data)
+                    hash_bytes(bytes)
                 ));
             }
             Extern::Global(g) => {
                 let v = g.get(&mut *store);
                 let v = show(store, &v);
-                trace.push(format!("global {name}: {v}"));
+                trace.push(format!("global {name:?}: {v}"));
             }
             Extern::Table(t) => {
                 let size = t.size(&*store);
-                let nulls: String = (0..size.min(1000))
-                    .map(|i| match t.get(&mut *store, i) {
-                        Some(r) if r.is_null() => '0',
-                        _ => '1',
+                let entries: Vec<_> = (0..size.min(1000))
+                    .map(|i| {
+                        let value = t.get(&mut *store, i).unwrap();
+                        show(store, &value.into())
                     })
                     .collect();
-                trace.push(format!("table {name}: {size} {nulls}"));
+                trace.push(format!("table {name:?}: {size} [{}]", entries.join(", ")));
             }
             _ => {}
         }
@@ -535,7 +761,35 @@ fn state(store: &mut Store<Host>, exports: &[(String, Extern)], trace: &mut Vec<
 }
 
 fn hash(data: &[u8]) -> u64 {
-    data.iter().fold(0xcbf2_9ce4_8422_2325, |h, &b| {
+    hash_bytes(data.iter().copied())
+}
+
+fn hash_bytes(bytes: impl Iterator<Item = u8>) -> u64 {
+    bytes.fold(0xcbf2_9ce4_8422_2325, |h, b| {
         (h ^ b as u64).wrapping_mul(0x100_0000_01b3)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FUNC, same_event};
+    use std::collections::HashMap;
+
+    #[test]
+    fn functions_may_merge_but_not_split() {
+        let event = |ids: &[u32]| {
+            let ids: Vec<String> = ids.iter().map(|i| format!("{FUNC}{i}")).collect();
+            format!("table: {}", ids.join(", "))
+        };
+        let (two, one, other) = (event(&[0, 1]), event(&[0, 0]), event(&[1, 1]));
+        let mut ids = HashMap::new();
+        // Two functions became one.
+        assert!(same_event(&two, &one, &mut ids));
+        // Still the same one the next time they show up.
+        assert!(same_event(&two, &one, &mut ids));
+        assert!(!same_event(&two, &other, &mut ids));
+        // One function did not become two.
+        assert!(!same_event(&one, &two, &mut HashMap::new()));
+        assert!(!same_event(&one, "table: 0, 0", &mut HashMap::new()));
+    }
 }

@@ -232,6 +232,14 @@ impl Cfg {
     }
 }
 
+/// Whether `rows` bit sets of `bits` bits each fit in the memory one function
+/// may use. Liveness and interference are dense, so a function with tens of
+/// thousands of locals would need gigabytes; it is left as it is instead.
+fn within_budget(bits: usize, rows: usize) -> bool {
+    const MAX_BYTES: usize = 64 << 20;
+    bits.div_ceil(64).saturating_mul(8).saturating_mul(rows) <= MAX_BYTES
+}
+
 struct BitSet(Vec<u64>);
 impl BitSet {
     fn new(n: usize) -> BitSet {
@@ -301,8 +309,12 @@ enum Plan {
     Assign(Assign),
 }
 
-/// The function's control-flow graph and its entry block.
-fn build_cfg(f: &LocalFunction) -> (Cfg, usize) {
+/// The function's control-flow graph and its entry block, unless the function
+/// is [too deep](crate::util::too_deep) for [`Cfg::walk`].
+fn build_cfg(f: &LocalFunction) -> Option<(Cfg, usize)> {
+    if crate::util::too_deep(f) {
+        return None;
+    }
     let mut cfg = Cfg {
         blocks: Vec::new(),
         targets: HashMap::new(),
@@ -326,13 +338,15 @@ fn build_cfg(f: &LocalFunction) -> (Cfg, usize) {
     cfg.targets.insert(body, exit);
     let end = cfg.walk(f, body, entry);
     cfg.edge(end, exit);
-    (cfg, entry)
+    Some((cfg, entry))
 }
 
 /// Liveness, interference and colouring: everything except allocating the new
 /// locals, which must happen in a fixed order across functions.
 fn plan(m: &Module, f: &LocalFunction) -> Plan {
-    let (cfg, entry) = build_cfg(f);
+    let Some((cfg, entry)) = build_cfg(f) else {
+        return Plan::Nothing;
+    };
     let nparams = f.args.len() as u32;
     if cfg.has_eh {
         return Plan::SkippedEh;
@@ -345,6 +359,9 @@ fn plan(m: &Module, f: &LocalFunction) -> Plan {
     // collapse to live_in = gen ∪ (live_out ∖ kill), and a block is revisited
     // only when the live-in of one of its successors grew.
     let nb = cfg.blocks.len();
+    if !within_budget(n, n.saturating_add(nb.saturating_mul(3))) {
+        return Plan::Nothing;
+    }
     let mut gen_kill: Vec<(BitSet, BitSet)> = Vec::with_capacity(nb);
     let mut preds: Vec<Vec<usize>> = vec![Vec::new(); nb];
     for (b, block) in cfg.blocks.iter().enumerate() {
@@ -387,6 +404,11 @@ fn plan(m: &Module, f: &LocalFunction) -> Plan {
     // the local it copies from.
     let mut interf: Vec<BitSet> = (0..n).map(|_| BitSet::new(n)).collect();
     let mut dead: Vec<(InstrSeqId, usize)> = Vec::new();
+    // A read of a non-nullable local only validates after a write in an
+    // enclosing block, and the validator checks reads this CFG never reaches
+    // (after a block that always branches away, say). Those writes stay.
+    let tys: Vec<ValType> = cfg.locals.iter().map(|&l| m.locals.get(l).ty()).collect();
+    let needs_write = |l: u32| matches!(tys[l as usize], ValType::Ref(r) if !r.nullable);
     let add = |interf: &mut Vec<BitSet>, a: u32, b: u32| {
         if a != b {
             interf[a as usize].set(b);
@@ -402,7 +424,7 @@ fn plan(m: &Module, f: &LocalFunction) -> Plan {
             match *ev {
                 Ev::Get(l) => live.set(l),
                 Ev::Set(l, copy, site) => {
-                    if !live.has(l) {
+                    if !live.has(l) && !needs_write(l) {
                         // Never read: the write is removed, so it cannot
                         // clobber anything.
                         dead.push(cfg.sets[site as usize]);
@@ -437,7 +459,6 @@ fn plan(m: &Module, f: &LocalFunction) -> Plan {
     }
 
     // Greedy colouring, most-used locals first; parameters keep their slots.
-    let tys: Vec<ValType> = cfg.locals.iter().map(|&l| m.locals.get(l).ty()).collect();
     let mut color: Vec<u32> = vec![u32::MAX; n];
     let mut members: Vec<Vec<u32>> = Vec::new();
     let mut color_ty: Vec<ValType> = Vec::new();
@@ -576,7 +597,9 @@ fn bits(v: Value) -> Option<u64> {
 /// write of `c` to `l` makes the fact true, any other write to `l` makes it
 /// false, and it is true at a join only if true on every incoming edge.
 fn redundant_sets(f: &LocalFunction) -> Vec<(InstrSeqId, usize)> {
-    let (cfg, entry) = build_cfg(f);
+    let Some((cfg, entry)) = build_cfg(f) else {
+        return Vec::new();
+    };
     if cfg.has_eh {
         return Vec::new();
     }
@@ -616,6 +639,9 @@ fn redundant_sets(f: &LocalFunction) -> Vec<(InstrSeqId, usize)> {
     let write = |l: u32, site: u32| (of_local(l), constant(site).and_then(|c| fact(l, c)));
     let nb = cfg.blocks.len();
     let n = facts.len();
+    if !within_budget(n, nb.saturating_mul(3)) {
+        return Vec::new();
+    }
     let mut gen_: Vec<BitSet> = Vec::with_capacity(nb);
     let mut kill: Vec<BitSet> = Vec::with_capacity(nb);
     for b in &cfg.blocks {
@@ -904,7 +930,10 @@ fn carry(m: &Module, f: &mut LocalFunction, stats: &mut StackifyStats) -> bool {
                 continue;
             };
             let mut h = 0usize;
-            for j in i + 1..n {
+            // The read is rarely far away, and looking for it all the way
+            // to the end is quadratic in a long run of calls and sets. This
+            // bound changed no output in the corpus.
+            for j in i + 1..n.min(i + 1024) {
                 let ins = &instrs[j].0;
                 // A removed `get` belongs to a pair that straddles this set.
                 if edit[j] == 1 {

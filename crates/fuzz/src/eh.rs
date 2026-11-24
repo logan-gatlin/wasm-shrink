@@ -418,19 +418,20 @@ fn start() -> Worker {
 }
 
 /// Run `input` and `output` under node and compare what every export does.
-pub fn compare(input: &[u8], output: &[u8]) -> std::result::Result<(), String> {
+pub fn compare(input: &[u8], output: &[u8]) -> std::result::Result<crate::Checked, String> {
     let mut guard = WORKER.lock().unwrap_or_else(|e| e.into_inner());
     let w = guard.get_or_insert_with(start);
     let (a, b) = (w.dir.join("in.wasm"), w.dir.join("out.wasm"));
     std::fs::write(&a, input).unwrap();
     std::fs::write(&b, output).unwrap();
-    let reply = (|| -> std::io::Result<std::result::Result<(), String>> {
+    let reply = (|| -> std::io::Result<std::result::Result<crate::Checked, String>> {
         writeln!(w.stdin, "{}\t{}", a.display(), b.display())?;
         w.stdin.flush()?;
         let mut line = String::new();
         w.stdout.read_line(&mut line)?;
         match line.trim_end() {
-            "ok" => Ok(Ok(())),
+            "ok" => Ok(Ok(crate::Checked::Executed)),
+            "inconclusive" => Ok(Ok(crate::Checked::Inconclusive)),
             "bad" => {
                 let mut detail = String::new();
                 loop {
@@ -454,7 +455,7 @@ pub fn compare(input: &[u8], output: &[u8]) -> std::result::Result<(), String> {
     }
 }
 
-pub fn check_case(case: &EhCase) -> std::result::Result<(), String> {
+pub fn check_case(case: &EhCase) -> std::result::Result<crate::Checked, String> {
     let out = check_static(case)?;
     compare(&case.wasm, &out)
 }

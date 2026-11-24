@@ -35,34 +35,32 @@ fn target(m: &Module, id: FunctionId) -> Option<FunctionId> {
             _ => return None,
         }
     }
-    let callee_ty = m.funcs.get(call.func).ty();
-    if m.types.get(callee_ty) != m.types.get(f.ty()) {
-        return None;
-    }
-    Some(call.func)
+    // The same type id, not an equal signature: with GC, equal signatures in
+    // different rec groups are different types to `call_indirect`.
+    (m.funcs.get(call.func).ty() == f.ty()).then_some(call.func)
 }
 
 pub fn run(m: &mut Module) -> Stats {
-    let mut map: HashMap<FunctionId, FunctionId> = HashMap::new();
     let ids: Vec<FunctionId> = m.funcs.iter_local().map(|(id, _)| id).collect();
+    let mut edges: HashMap<FunctionId, FunctionId> = ids
+        .iter()
+        .filter_map(|&id| Some((id, target(m, id)?)))
+        .collect();
+    // Follow each chain to its end once. Taking an edge removes it, so a
+    // cycle (a -> b -> a) stops at the function it started from, which stays.
+    let mut map = HashMap::new();
+    let mut path = Vec::new();
     for id in ids {
-        if let Some(t) = target(m, id) {
-            map.insert(id, t);
+        let mut cur = id;
+        while let Some(next) = edges.remove(&cur) {
+            path.push(cur);
+            cur = next;
         }
-    }
-    // Break cycles (a -> b -> a): drop one edge of each.
-    let mut keys: Vec<_> = map.keys().copied().collect();
-    keys.sort_by_key(|f| f.index());
-    for k in keys {
-        let mut seen = vec![k];
-        let mut cur = k;
-        while let Some(&n) = map.get(&cur) {
-            if seen.contains(&n) {
-                map.remove(&cur);
-                break;
+        let end = map.get(&cur).copied().unwrap_or(cur);
+        for source in path.drain(..) {
+            if source != end {
+                map.insert(source, end);
             }
-            seen.push(n);
-            cur = n;
         }
     }
     replace_functions(m, &map);
@@ -85,7 +83,7 @@ mod tests {
         .unwrap();
         let once = |_| {
             let mut m = walrus::Module::from_buffer(&wasm).unwrap();
-            super::run(&mut m);
+            assert_eq!(super::run(&mut m).removed, 2);
             crate::test_util::emit(&mut m)
         };
         let first = once(0);

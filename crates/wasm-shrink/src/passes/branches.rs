@@ -261,6 +261,17 @@ fn function(m: &Module, f: &mut LocalFunction, stats: &mut Stats) -> bool {
     }
     // `block $b … if <A> br $b end <B> end`: `<B>` becomes the `else` arm
     // (an empty one when the `if` is the last thing in the block).
+    // How many branches target each sequence.
+    let mut refs: HashMap<InstrSeqId, usize> = HashMap::new();
+    for s in seqs(f) {
+        let mut t = Vec::new();
+        for (i, _) in &f.block(s).instrs {
+            targets(i, &mut t);
+        }
+        for x in t {
+            *refs.entry(x).or_default() += 1;
+        }
+    }
     for b in seqs(f) {
         if is_loop.contains(&b)
             || b == entry
@@ -272,6 +283,7 @@ fn function(m: &Module, f: &mut LocalFunction, stats: &mut Stats) -> bool {
         let Some((k, then, alt)) = instrs.iter().enumerate().find_map(|(k, (i, _))| match i {
             Instr::IfElse(e)
                 if f.block(e.alternative).instrs.is_empty()
+                    && refs.get(&e.consequent).is_none_or(|&n| n == 0)
                     && matches!(f.block(e.consequent).ty, InstrSeqType::Simple(None))
                     && matches!(f.block(e.consequent).instrs.last(), Some((Instr::Br(x), _)) if x.block == b) =>
             {
@@ -294,18 +306,9 @@ fn function(m: &Module, f: &mut LocalFunction, stats: &mut Stats) -> bool {
         let rest = f.block_mut(b).instrs.split_off(k + 1);
         f.block_mut(alt).instrs = rest;
         f.block_mut(then).instrs.pop();
+        *refs.get_mut(&b).unwrap() -= 1;
         stats.if_else += 1;
         changed = true;
-    }
-    let mut refs: HashMap<InstrSeqId, usize> = HashMap::new();
-    for s in seqs(f) {
-        let mut t = Vec::new();
-        for (i, _) in &f.block(s).instrs {
-            targets(i, &mut t);
-        }
-        for x in t {
-            *refs.entry(x).or_default() += 1;
-        }
     }
     for s in seqs(f) {
         let mut j = 0;

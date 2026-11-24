@@ -14,7 +14,8 @@
 //! function gets no name, so the name section does not grow.
 
 use crate::passes::inline::{Snapshot, children, copy_seq, inlinable};
-use crate::util::{encode_functions, leb_len};
+use crate::size::sleb_len;
+use crate::util::{encode_functions, locals_that_fit};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use walrus::ir::*;
@@ -58,8 +59,8 @@ impl K {
     }
     fn bytes(&self) -> usize {
         match *self {
-            K::I32(v) => 1 + leb_len(v.unsigned_abs() as u64 * 2),
-            K::I64(v) => 1 + leb_len(v.unsigned_abs() * 2),
+            K::I32(v) => 1 + sleb_len(v.into()),
+            K::I64(v) => 1 + sleb_len(v),
             K::F32(_) => 5,
             K::F64(_) => 9,
             K::V128(_) => 18,
@@ -111,6 +112,9 @@ fn in_order<'a>(snap: &'a mut Snapshot, seq: InstrSeqId, f: &mut dyn FnMut(&mut 
     }
 }
 
+/// The most parameters that validators accept in one function.
+const MAX_PARAMS: usize = 1000;
+
 /// Members of one (type index, shape) group: (function, constants, body length).
 type Group = Vec<(FunctionId, Vec<K>, usize)>;
 
@@ -152,6 +156,12 @@ pub fn run(m: &mut Module) -> Stats {
         }
         let ty = m.types.get(f.ty());
         let (params, results) = (ty.params().to_vec(), ty.results().to_vec());
+        // The shared function takes the constants as extra parameters.
+        if params.len() + differs.len() > MAX_PARAMS
+            || locals_that_fit(f, differs.len()) < differs.len()
+        {
+            continue;
+        }
         // Profitability: k bodies become one body plus k thunks.
         let k = members.len() as i64;
         let body = members[0].2 as i64;

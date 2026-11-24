@@ -1,12 +1,12 @@
 //! Helpers shared by the passes: function-reference rewriting, use counting,
-//! and the encoded bytes of each function body.
+//! the encoded bytes of each function body, and the GC that runs around them.
 
 use rayon::prelude::*;
-use std::collections::HashMap;
-use walrus::ir::{Instr, Visitor, VisitorMut, dfs_in_order, dfs_pre_order_mut};
+use std::collections::{HashMap, HashSet};
+use walrus::ir::{Instr, Value, Visitor, VisitorMut, dfs_in_order, dfs_pre_order_mut};
 use walrus::{
-    ConstExpr, ElementItems, ExportItem, FunctionId, FunctionKind, GlobalKind, LocalFunction,
-    Module,
+    ConstExpr, ConstOp, ElementItems, ElementKind, ExportItem, FunctionId, FunctionKind,
+    GlobalKind, LocalFunction, Module,
 };
 
 /// Local function ids, in the module's own order.
@@ -84,46 +84,92 @@ pub fn replace_functions(m: &mut Module, map: &HashMap<FunctionId, FunctionId>) 
     if map.is_empty() {
         return;
     }
-    let resolve = |mut f: FunctionId| {
-        while let Some(&g) = map.get(&f) {
-            f = g;
+    let resolve = |f: &mut FunctionId| {
+        while let Some(&g) = map.get(f) {
+            *f = g;
         }
-        f
     };
-    struct Rewrite<'a, F: Fn(FunctionId) -> FunctionId>(&'a F);
-    impl<F: Fn(FunctionId) -> FunctionId> VisitorMut for Rewrite<'_, F> {
+    struct Rewrite<'a, F: Fn(&mut FunctionId)>(&'a F);
+    impl<F: Fn(&mut FunctionId)> VisitorMut for Rewrite<'_, F> {
         fn visit_function_id_mut(&mut self, f: &mut FunctionId) {
-            *f = (self.0)(*f);
+            (self.0)(f);
         }
     }
     m.funcs.par_iter_local_mut().for_each(|(_, f)| {
         let entry = f.entry_block();
         dfs_pre_order_mut(&mut Rewrite(&resolve), f, entry);
     });
-    let fix_expr = |e: &mut ConstExpr| {
-        if let ConstExpr::RefFunc(f) = e {
-            *f = resolve(*f);
+    let expr = |e: &mut ConstExpr| match e {
+        ConstExpr::RefFunc(f) => resolve(f),
+        ConstExpr::Extended(ops) => {
+            for op in ops {
+                if let ConstOp::RefFunc(f) = op {
+                    resolve(f);
+                }
+            }
         }
+        _ => {}
     };
+    m.tables
+        .iter_mut()
+        .filter_map(|t| t.init.as_mut())
+        .for_each(expr);
     for el in m.elements.iter_mut() {
         match &mut el.items {
-            ElementItems::Functions(fs) => fs.iter_mut().for_each(|f| *f = resolve(*f)),
-            ElementItems::Expressions(_, es) => es.iter_mut().for_each(fix_expr),
+            ElementItems::Functions(fs) => fs.iter_mut().for_each(resolve),
+            ElementItems::Expressions(_, es) => es.iter_mut().for_each(expr),
         }
     }
     for ex in m.exports.iter_mut() {
         if let ExportItem::Function(f) = &mut ex.item {
-            *f = resolve(*f);
+            resolve(f);
         }
     }
     let globals: Vec<_> = m.globals.iter().map(|g| g.id()).collect();
     for g in globals {
         if let GlobalKind::Local(e) = &mut m.globals.get_mut(g).kind {
-            fix_expr(e);
+            expr(e);
         }
     }
-    if let Some(s) = m.start {
-        m.start = Some(resolve(s));
+    if let Some(s) = &mut m.start {
+        resolve(s);
+    }
+}
+
+/// [`walrus::passes::gc`], keeping what instantiation can fail on.
+///
+/// walrus drops an unused table together with its active element segments. A
+/// segment that does not fit in its table traps at instantiation, so such a
+/// table stays.
+pub fn gc(m: &mut Module) {
+    let fits = |el: &walrus::Element, table: &walrus::Table| {
+        let ElementKind::Active { offset, .. } = &el.kind else {
+            return true;
+        };
+        let offset = match offset {
+            ConstExpr::Value(Value::I32(n)) => *n as u32 as u64,
+            ConstExpr::Value(Value::I64(n)) => *n as u64,
+            _ => return false,
+        };
+        let len = match &el.items {
+            ElementItems::Functions(fs) => fs.len(),
+            ElementItems::Expressions(_, es) => es.len(),
+        };
+        offset
+            .checked_add(len as u64)
+            .is_some_and(|end| end <= table.initial)
+    };
+    let keep: Vec<_> = m
+        .tables
+        .iter()
+        .filter(|t| !t.elem_segments.iter().all(|&e| fits(m.elements.get(e), t)))
+        .map(|t| t.id())
+        .collect();
+    // An export is the only root walrus lets a caller add.
+    let roots: Vec<_> = keep.into_iter().map(|t| m.exports.add("", t)).collect();
+    walrus::passes::gc::run(m);
+    for root in roots {
+        m.exports.delete(root);
     }
 }
 
@@ -174,14 +220,26 @@ pub fn function_uses(m: &Module) -> HashMap<FunctionId, Uses> {
         }
     }
     let mut pin = |f: FunctionId| uses.entry(f).or_default().pinned = true;
+    fn expr_refs(expr: &ConstExpr, pin: &mut impl FnMut(FunctionId)) {
+        match expr {
+            ConstExpr::RefFunc(f) => pin(*f),
+            ConstExpr::Extended(ops) => {
+                for op in ops {
+                    if let ConstOp::RefFunc(f) = op {
+                        pin(*f);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    for expr in m.tables.iter().filter_map(|t| t.init.as_ref()) {
+        expr_refs(expr, &mut pin);
+    }
     for el in m.elements.iter() {
         match &el.items {
             ElementItems::Functions(fs) => fs.iter().for_each(|f| pin(*f)),
-            ElementItems::Expressions(_, es) => es.iter().for_each(|e| {
-                if let ConstExpr::RefFunc(f) = e {
-                    pin(*f)
-                }
-            }),
+            ElementItems::Expressions(_, es) => es.iter().for_each(|e| expr_refs(e, &mut pin)),
         }
     }
     for ex in m.exports.iter() {
@@ -190,8 +248,8 @@ pub fn function_uses(m: &Module) -> HashMap<FunctionId, Uses> {
         }
     }
     for g in m.globals.iter() {
-        if let GlobalKind::Local(ConstExpr::RefFunc(f)) = g.kind {
-            pin(f);
+        if let GlobalKind::Local(e) = &g.kind {
+            expr_refs(e, &mut pin);
         }
     }
     if let Some(s) = m.start {
@@ -219,7 +277,22 @@ pub fn encode_functions(m: &mut Module) -> Encoded {
         m.funcs.get_mut(id).name = Some(format!("\u{1}{}", id.index()));
     }
     // The module must be parsed with the default config, which emits names.
+    // Emitting changes the module: it takes the custom sections, and adds an
+    // element segment declaring the functions `ref.func` refers to, which
+    // would keep them alive after their last reference is gone. Undo both.
+    let customs = std::mem::take(&mut m.customs);
+    let elements: HashSet<_> = m.elements.iter().map(|e| e.id()).collect();
     let wasm = m.emit_wasm();
+    m.customs = customs;
+    let declared: Vec<_> = m
+        .elements
+        .iter()
+        .map(|e| e.id())
+        .filter(|e| !elements.contains(e))
+        .collect();
+    for e in declared {
+        m.elements.delete(e);
+    }
     for (&id, name) in ids.iter().zip(saved) {
         m.funcs.get_mut(id).name = name;
     }
@@ -236,7 +309,10 @@ pub fn encode_functions(m: &mut Module) -> Encoded {
         match payload.expect("walrus emitted an invalid module") {
             wasmparser::Payload::ImportSection(s) => {
                 for imp in s.into_imports() {
-                    if matches!(imp.unwrap().ty, wasmparser::TypeRef::Func(_)) {
+                    if matches!(
+                        imp.unwrap().ty,
+                        wasmparser::TypeRef::Func(_) | wasmparser::TypeRef::FuncExact(_)
+                    ) {
                         imported += 1;
                     }
                 }
@@ -284,6 +360,52 @@ pub fn encode_functions(m: &mut Module) -> Encoded {
 }
 
 /// Unsigned LEB128 length of `v`.
+/// The most locals, parameters included, that validators accept in one
+/// function. A pass that adds locals must stay within it.
+pub const MAX_LOCALS: usize = 50_000;
+
+/// How many of `want` new locals the function can take. It is emitted with
+/// its parameters and every other local its body mentions.
+pub fn locals_that_fit(f: &LocalFunction, want: usize) -> usize {
+    let mut locals = f.args.clone();
+    let mut stack = vec![f.entry_block()];
+    while let Some(s) = stack.pop() {
+        for (i, _) in &f.block(s).instrs {
+            locals.extend(crate::passes::inline::local_of(i));
+            stack.extend(crate::passes::inline::children(i));
+        }
+    }
+    // Nearly always the mentions alone are few enough.
+    if locals.len() + want > MAX_LOCALS {
+        locals.sort_unstable();
+        locals.dedup();
+    }
+    want.min(MAX_LOCALS.saturating_sub(locals.len()))
+}
+
+/// The deepest nesting of blocks that the walkers that recurse once per level
+/// follow, so that they do not run out of stack. Compiled code stays far
+/// below it; a pass with such a walker leaves deeper functions alone.
+pub const MAX_NESTING: usize = 500;
+
+/// Whether the function nests blocks deeper than [`MAX_NESTING`].
+pub fn too_deep(f: &LocalFunction) -> bool {
+    let mut stack = vec![(f.entry_block(), 0)];
+    while let Some((s, depth)) = stack.pop() {
+        if depth > MAX_NESTING {
+            return true;
+        }
+        for (i, _) in &f.block(s).instrs {
+            stack.extend(
+                crate::passes::inline::children(i)
+                    .into_iter()
+                    .map(|c| (c, depth + 1)),
+            );
+        }
+    }
+    false
+}
+
 pub fn leb_len(mut v: u64) -> usize {
     let mut n = 1;
     while v >= 0x80 {

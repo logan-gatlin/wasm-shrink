@@ -100,7 +100,7 @@ fn branch_targets(instr: &Instr) -> Vec<InstrSeqId> {
     }
 }
 
-fn local_of(instr: &Instr) -> Option<LocalId> {
+pub(crate) fn local_of(instr: &Instr) -> Option<LocalId> {
     match instr {
         Instr::LocalGet(g) => Some(g.local),
         Instr::LocalSet(s) => Some(s.local),
@@ -111,20 +111,23 @@ fn local_of(instr: &Instr) -> Option<LocalId> {
 
 /// Reasons a function body is never inlined.
 pub(crate) fn inlinable(f: &LocalFunction) -> bool {
-    let mut ok = true;
-    let mut stack = vec![f.entry_block()];
-    while let Some(s) = stack.pop() {
+    let mut stack = vec![(f.entry_block(), 0)];
+    while let Some((s, depth)) = stack.pop() {
+        // [`Snapshot::take`] and [`copy_seq`] recurse once per level.
+        if depth > crate::util::MAX_NESTING {
+            return false;
+        }
         for (i, _) in &f.block(s).instrs {
             if matches!(
                 i,
                 Instr::ReturnCall(_) | Instr::ReturnCallIndirect(_) | Instr::ReturnCallRef(_)
             ) {
-                ok = false;
+                return false;
             }
-            stack.extend(children(i));
+            stack.extend(children(i).into_iter().map(|c| (c, depth + 1)));
         }
     }
-    ok
+    true
 }
 
 impl Snapshot {
@@ -270,7 +273,12 @@ fn knob(name: &str, default: i64) -> i64 {
 ///
 /// `size` is (instruction bytes, body bytes) from [`crate::size::function`].
 /// `arg_sets` is the number of `local.set`s that pop arguments, over all
-/// sites (arguments [`forwarded`] in place need none).
+/// sites (arguments [`forwarded`] in place need none). `new_groups` is the
+/// number of local declaration groups the callers gain: one per caller and
+/// local type that only the callee has.
+/// A callee's `return` becomes a `br` that is a byte longer. That is not
+/// counted: `branches` removes most of them, and counting them made the
+/// default pipeline's output larger.
 /// Without a snapshot this is an upper bound: it assumes no wrapper block and
 /// no zeroing of locals, which can only lower the gain. It is used to skip
 /// copying the bodies of functions that could never pay.
@@ -278,6 +286,7 @@ fn knob(name: &str, default: i64) -> i64 {
 fn gain(
     m: &Module,
     arg_sets: usize,
+    new_groups: usize,
     snap: Option<&Snapshot>,
     uses: &Uses,
     (instr_bytes, body_len): (usize, usize),
@@ -302,7 +311,26 @@ fn gain(
     }
     // Function-section entry, code-section length prefix, the body.
     let removed = 1 + leb_len(body_len as u64) as i64 + body_len as i64;
-    Some(removed + n * call - n * site - 2 * arg_sets as i64 - in_loop_sites as i64 * zero)
+    let sets = 2 * (arg_sets + new_groups) as i64;
+    Some(removed + n * call - n * site - sets - in_loop_sites as i64 * zero)
+}
+
+/// The types of the function's own (non-parameter) locals, and how many
+/// locals it has with its parameters.
+fn locals_of(m: &Module, f: &LocalFunction) -> (HashSet<ValType>, usize) {
+    let mut own: HashSet<LocalId> = HashSet::new();
+    let mut stack = vec![f.entry_block()];
+    while let Some(s) = stack.pop() {
+        for (i, _) in &f.block(s).instrs {
+            own.extend(local_of(i));
+            stack.extend(children(i));
+        }
+    }
+    for a in &f.args {
+        own.remove(a);
+    }
+    let types = own.iter().map(|l| m.locals.get(*l).ty()).collect();
+    (types, own.len() + f.args.len())
 }
 
 /// How many of the call's last arguments are a plain `local.get` the inlined
@@ -582,6 +610,8 @@ fn callee_first(
 
 pub fn run(m: &mut Module, max_rounds: usize) -> Stats {
     let mut stats = Stats::default();
+    // [`locals_of`] each caller, kept up to date as callees are inlined into it.
+    let mut caller_locals: HashMap<FunctionId, (HashSet<ValType>, usize)> = HashMap::new();
     for _ in 0..max_rounds {
         stats.rounds += 1;
         let uses = function_uses(m);
@@ -602,67 +632,119 @@ pub fn run(m: &mut Module, max_rounds: usize) -> Stats {
                     f.args.len() - forwarded(instrs, k, &f.args, None)
                 })
                 .sum();
-            (gain(m, arg_sets, None, u, size, call_leb, loops)? > 0).then_some(())
+            (gain(m, arg_sets, 0, None, u, size, call_leb, loops)? > 0).then_some(())
         })
         .into_iter()
         .filter_map(|(g, ok)| ok.map(|_| g))
         .collect();
         let mut inlined = 0;
-        for g in callee_first(&cands, &site_map) {
-            let f = m.funcs.get(g).kind.unwrap_local();
-            // The body may have grown since the candidates were chosen.
-            let u = &uses[&g];
-            let sites = &site_map[&g];
-            let loops = sites.iter().filter(|s| s.3).count();
-            let size = crate::size::function(m, f, call_leb);
-            let snap = Snapshot::take(m, f);
-            // Find the calls again: inlining other functions into the same
-            // caller has moved them within their sequence (sequences stay).
-            let mut groups: Vec<(FunctionId, InstrSeqId, bool, Vec<usize>)> = Vec::new();
-            for &(caller, seq, _, in_loop) in sites {
-                if groups.iter().any(|x| x.0 == caller && x.1 == seq) {
+        // A callee turned down only for the local groups it would add gets a
+        // second look at the end of the round: by then another callee may
+        // have brought the same types to its callers.
+        let mut queue = callee_first(&cands, &site_map);
+        let mut waiting: Vec<FunctionId> = Vec::new();
+        let mut gone: HashSet<FunctionId> = HashSet::new();
+        for second in [false, true] {
+            for g in std::mem::take(&mut queue) {
+                let f = m.funcs.get(g).kind.unwrap_local();
+                // The body may have grown since the candidates were chosen.
+                let u = &uses[&g];
+                let sites = &site_map[&g];
+                // A caller inlined in the meantime took its calls along, to
+                // functions the list of sites does not have.
+                if second && sites.iter().any(|s| gone.contains(&s.0)) {
                     continue;
                 }
-                let at: Vec<usize> = m
-                    .funcs
-                    .get(caller)
-                    .kind
-                    .unwrap_local()
-                    .block(seq)
-                    .instrs
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, (i, _))| matches!(i, Instr::Call(c) if c.func == g))
-                    .map(|(k, _)| k)
-                    .collect();
-                groups.push((caller, seq, in_loop, at));
-            }
-            if groups.iter().map(|x| x.3.len()).sum::<usize>() != sites.len() {
-                continue; // should not happen; never delete a function still called
-            }
-            let arg_sets: usize = groups
-                .iter()
-                .flat_map(|(caller, seq, _, at)| {
-                    let instrs = &m.funcs.get(*caller).kind.unwrap_local().block(*seq).instrs;
-                    let snap = &snap;
-                    at.iter().map(move |&k| {
-                        snap.args.len() - forwarded(instrs, k, &snap.args, Some(&snap.written))
-                    })
-                })
-                .sum();
-            match gain(m, arg_sets, Some(&snap), u, size, call_leb, loops) {
-                Some(x) if x > 0 => {}
-                _ => continue,
-            }
-            for (caller, seq, in_loop, at) in groups {
-                for &k in at.iter().rev() {
-                    inline_site(m, caller, seq, k, in_loop, &snap);
-                    stats.inlined_sites += 1;
+                let loops = sites.iter().filter(|s| s.3).count();
+                let size = crate::size::function(m, f, call_leb);
+                let snap = Snapshot::take(m, f);
+                // Find the calls again: inlining other functions into the same
+                // caller has moved them within their sequence (sequences stay).
+                let mut groups: Vec<(FunctionId, InstrSeqId, bool, Vec<usize>)> = Vec::new();
+                let mut grouped: HashSet<(FunctionId, InstrSeqId)> = HashSet::new();
+                for &(caller, seq, _, in_loop) in sites {
+                    if !grouped.insert((caller, seq)) {
+                        continue;
+                    }
+                    let at: Vec<usize> = m
+                        .funcs
+                        .get(caller)
+                        .kind
+                        .unwrap_local()
+                        .block(seq)
+                        .instrs
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, (i, _))| matches!(i, Instr::Call(c) if c.func == g))
+                        .map(|(k, _)| k)
+                        .collect();
+                    groups.push((caller, seq, in_loop, at));
                 }
+                if groups.iter().map(|x| x.3.len()).sum::<usize>() != sites.len() {
+                    continue; // should not happen; never delete a function still called
+                }
+                // The locals each caller gets: the callee's own, and one for
+                // every argument that is not forwarded.
+                let ty = |l: &LocalId| m.locals.get(*l).ty();
+                let mut arg_sets = 0;
+                let mut added: HashMap<FunctionId, (HashSet<ValType>, usize)> = HashMap::new();
+                for (caller, seq, _, at) in &groups {
+                    let instrs = &m.funcs.get(*caller).kind.unwrap_local().block(*seq).instrs;
+                    let (types, count) = added
+                        .entry(*caller)
+                        .or_insert_with(|| (snap.locals.iter().map(ty).collect(), 0));
+                    for &k in at {
+                        let copied =
+                            snap.args.len() - forwarded(instrs, k, &snap.args, Some(&snap.written));
+                        arg_sets += copied;
+                        types.extend(snap.args[..copied].iter().map(ty));
+                        *count += copied + snap.locals.len();
+                    }
+                }
+                let mut new_groups = 0;
+                let mut fits = true;
+                for (caller, (types, count)) in &added {
+                    let have = caller_locals
+                        .entry(*caller)
+                        .or_insert_with(|| locals_of(m, m.funcs.get(*caller).kind.unwrap_local()));
+                    new_groups += types.difference(&have.0).count();
+                    fits &= have.1 + count <= crate::util::MAX_LOCALS;
+                }
+                let pays = gain(
+                    m,
+                    arg_sets,
+                    new_groups,
+                    Some(&snap),
+                    u,
+                    size,
+                    call_leb,
+                    loops,
+                );
+                match pays {
+                    Some(x) if fits && x > 0 => {}
+                    Some(x) if fits && !second && x + 2 * new_groups as i64 > 0 => {
+                        waiting.push(g);
+                        continue;
+                    }
+                    _ => continue,
+                }
+                for (caller, (types, count)) in added {
+                    let have = caller_locals.get_mut(&caller).unwrap();
+                    have.0.extend(types);
+                    have.1 += count;
+                }
+                for (caller, seq, in_loop, at) in groups {
+                    for &k in at.iter().rev() {
+                        inline_site(m, caller, seq, k, in_loop, &snap);
+                        stats.inlined_sites += 1;
+                    }
+                }
+                m.funcs.delete(g);
+                gone.insert(g);
+                stats.inlined_functions += 1;
+                inlined += 1;
             }
-            m.funcs.delete(g);
-            stats.inlined_functions += 1;
-            inlined += 1;
+            queue = std::mem::take(&mut waiting);
         }
         if inlined == 0 {
             break;

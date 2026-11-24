@@ -13,6 +13,8 @@
 //! occurrences after that definition are rewritten.
 
 use crate::passes::branches::children;
+use crate::size::sleb_len;
+use crate::util::{MAX_LOCALS, locals_that_fit};
 use std::collections::HashMap;
 use walrus::ir::*;
 use walrus::{LocalFunction, LocalId, Module, ValType};
@@ -25,19 +27,6 @@ pub struct Stats {
 
 /// Positions of one `local.get $b; i32.const C; i32.add`: (sequence, index).
 type Sites = Vec<(InstrSeqId, usize)>;
-
-fn sleb_len(v: i64) -> usize {
-    let mut n = 1;
-    let mut v = v;
-    loop {
-        let b = v & 0x7f;
-        v >>= 7;
-        if (v == 0 && b & 0x40 == 0) || (v == -1 && b & 0x40 != 0) {
-            return n;
-        }
-        n += 1;
-    }
-}
 
 /// One sum to compute once: base local, constant, where the definition goes
 /// (entry-block index, before any rewriting), and every occurrence.
@@ -121,6 +110,12 @@ fn plan(m: &Module, f: &LocalFunction) -> Vec<Sum> {
         })
         .collect();
     chosen.sort_by_key(|((l, c), _)| (l.index(), *c));
+    // Every local is a parameter or mentioned by an instruction, so there is
+    // nearly always room without counting them.
+    let instrs: usize = all.iter().map(|s| f.block(*s).instrs.len()).sum();
+    if f.args.len() + instrs + chosen.len() > MAX_LOCALS {
+        chosen.truncate(locals_that_fit(f, chosen.len()));
+    }
     chosen
         .into_iter()
         .map(|((base, c), v)| (base, c, def_point(base).unwrap(), v))
@@ -128,68 +123,77 @@ fn plan(m: &Module, f: &LocalFunction) -> Vec<Sum> {
 }
 
 fn apply(m: &mut Module, fid: walrus::FunctionId, sums: Vec<Sum>, stats: &mut Stats) {
-    // New locals, then rewrite (later positions first), then insert definitions.
-    let mut repl: Vec<(InstrSeqId, usize, LocalId)> = Vec::new();
+    // New locals, then rewrite each sequence once, then insert the definitions.
+    let mut repl: HashMap<InstrSeqId, Vec<(usize, LocalId)>> = HashMap::new();
     let mut defs: Vec<(usize, LocalId, LocalId, i32)> = Vec::new();
     for (base, c, at, v) in &sums {
         let t = m.locals.add(ValType::I32);
         defs.push((*at, t, *base, *c));
         for &(s, k) in v {
-            repl.push((s, k, t));
+            repl.entry(s).or_default().push((k, t));
         }
         stats.sums += 1;
         stats.uses += v.len();
     }
     let f = m.funcs.get_mut(fid).kind.unwrap_local_mut();
     let entry = f.entry_block();
-    let params = f.args.clone();
-    repl.sort_by_key(|r| std::cmp::Reverse(r.1));
-    for (s, k, t) in repl {
-        f.block_mut(s).instrs.splice(
-            k..k + 3,
-            [(LocalGet { local: t }.into(), InstrLocId::default())],
-        );
+    let at = |i: Instr| (i, InstrLocId::default());
+    // Each occurrence rewritten in the entry block moves the definition
+    // points after it two instructions up.
+    let mut entry_uses: Vec<usize> = repl
+        .get(&entry)
+        .map(|uses| uses.iter().map(|u| u.0).collect())
+        .unwrap_or_default();
+    entry_uses.sort_unstable();
+    // Both edits are made in place, moving only what follows the first one.
+    for (s, mut uses) in repl {
+        uses.sort_unstable_by_key(|u| u.0);
+        let instrs = &mut f.block_mut(s).instrs;
+        let (mut read, mut write) = (uses[0].0, uses[0].0);
+        let mut uses = uses.into_iter().peekable();
+        while read < instrs.len() {
+            if let Some((_, t)) = uses.next_if(|u| u.0 == read) {
+                instrs[write] = at(LocalGet { local: t }.into());
+                read += 3;
+            } else {
+                instrs.swap(write, read);
+                read += 1;
+            }
+            write += 1;
+        }
+        instrs.truncate(write);
     }
-    // Entry-block indices shifted by the rewrites before them; recompute the
-    // definition point by finding the defining instruction again.
-    defs.sort_by_key(|d| std::cmp::Reverse(d.0));
-    for (_, t, base, c) in defs {
-        let instrs = &f.block(entry).instrs;
-        let at = if params.contains(&base)
-            && !instrs.iter().any(|(i, _)| {
-                matches!(i, Instr::LocalSet(x) if x.local == base)
-                    || matches!(i, Instr::LocalTee(x) if x.local == base)
-            }) {
-            0
-        } else {
-            instrs
-                .iter()
-                .position(|(i, _)| {
-                    matches!(i, Instr::LocalSet(x) if x.local == base)
-                        || matches!(i, Instr::LocalTee(x) if x.local == base)
-                })
-                .unwrap()
-                + 1
-        };
-        let seq: [(Instr, InstrLocId); 4] = [
-            (LocalGet { local: base }.into(), InstrLocId::default()),
-            (
-                Const {
-                    value: Value::I32(c),
-                }
-                .into(),
-                InstrLocId::default(),
-            ),
-            (
-                Binop {
-                    op: BinaryOp::I32Add,
-                }
-                .into(),
-                InstrLocId::default(),
-            ),
-            (LocalSet { local: t }.into(), InstrLocId::default()),
-        ];
-        f.block_mut(entry).instrs.splice(at..at, seq);
+    // Definitions at the same point go in reverse order.
+    let mut defs: Vec<_> = defs
+        .into_iter()
+        .rev()
+        .map(|(point, t, base, c)| {
+            let moved = 2 * entry_uses.partition_point(|&k| k < point);
+            (point - moved, (t, base, c))
+        })
+        .collect();
+    defs.sort_by_key(|d| d.0);
+    let instrs = &mut f.block_mut(entry).instrs;
+    let mut read = instrs.len();
+    let mut write = read + 4 * defs.len();
+    instrs.resize(write, at(Unreachable {}.into()));
+    for (point, (t, base, c)) in defs.into_iter().rev() {
+        while read > point {
+            read -= 1;
+            write -= 1;
+            instrs.swap(read, write);
+        }
+        write -= 4;
+        instrs[write] = at(LocalGet { local: base }.into());
+        instrs[write + 1] = at(Const {
+            value: Value::I32(c),
+        }
+        .into());
+        instrs[write + 2] = at(Binop {
+            op: BinaryOp::I32Add,
+        }
+        .into());
+        instrs[write + 3] = at(LocalSet { local: t }.into());
     }
 }
 

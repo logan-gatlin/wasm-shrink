@@ -2,9 +2,97 @@ use arbitrary::{Result, Unstructured};
 use std::collections::HashMap;
 use walrus::ir::*;
 use walrus::{
-    ConstExpr, DataKind, ElementItems, FunctionBuilder, FunctionId, FunctionKind, GlobalId,
-    LocalFunction, LocalId, MemoryId, Module, ValType,
+    AbstractHeapType, ConstExpr, DataKind, ElementItems, ElementKind, FunctionBuilder, FunctionId,
+    FunctionKind, GlobalId, HeapType, LocalFunction, LocalId, MemoryId, Module, RawCustomSection,
+    RefType, ValType,
 };
+
+/// Integers on either side of where a signed LEB128 gets a byte longer, and
+/// the ends of the 32- and 64-bit ranges.
+const EDGES: &[i64] = &[
+    0,
+    -1,
+    63,
+    64,
+    -64,
+    -65,
+    8191,
+    8192,
+    -8192,
+    -8193,
+    i32::MAX as i64,
+    i32::MIN as i64,
+    u32::MAX as i64,
+    i64::MAX,
+    i64::MIN,
+];
+
+/// Floats that compare equal, or do not compare at all, but have different
+/// bits: both zeros and NaNs with different payloads.
+const FLOATS: &[u64] = &[
+    0,
+    1 << 63,
+    0x7ff8_0000_0000_0000,
+    0x7ff8_0000_0000_0001,
+    0xfff8_0000_0000_0000,
+    0x7ff0_0000_0000_0001,
+];
+
+fn f32_bits(bits: u64) -> u32 {
+    // Keep the sign, the exponent and the low payload bit.
+    ((bits >> 32) as u32 & 0xfff8_0000) | (bits as u32 & 1)
+}
+
+/// A constant of type `ty`, often one of [`EDGES`] or [`FLOATS`].
+fn constant(ty: ValType, u: &mut Unstructured) -> Result<Value> {
+    let edge = u.ratio(1, 2)?;
+    Ok(match ty {
+        ValType::I32 if edge => Value::I32(*u.choose(EDGES)? as i32),
+        ValType::I32 => Value::I32(u.int_in_range(-2..=300)?),
+        ValType::I64 if edge => Value::I64(*u.choose(EDGES)?),
+        ValType::I64 => Value::I64(u.arbitrary()?),
+        ValType::F32 if edge => Value::F32(f32::from_bits(f32_bits(*u.choose(FLOATS)?))),
+        ValType::F32 => Value::F32(f32::from_bits(u.arbitrary()?)),
+        ValType::F64 if edge => Value::F64(f64::from_bits(*u.choose(FLOATS)?)),
+        _ => Value::F64(f64::from_bits(u.arbitrary()?)),
+    })
+}
+
+/// Turn the value of type `ty` on the stack into an `i32` that depends on
+/// all of its bits.
+fn to_i32(ty: ValType) -> Vec<Instr> {
+    let unop = |op| Instr::from(Unop { op });
+    let fold = [
+        Const {
+            value: Value::I64(0x9e37_79b9_7f4a_7c15u64 as i64),
+        }
+        .into(),
+        Binop {
+            op: BinaryOp::I64Mul,
+        }
+        .into(),
+        Const {
+            value: Value::I64(32),
+        }
+        .into(),
+        Binop {
+            op: BinaryOp::I64ShrU,
+        }
+        .into(),
+        unop(UnaryOp::I32WrapI64),
+    ];
+    match ty {
+        ValType::I32 => vec![],
+        ValType::F32 => vec![unop(UnaryOp::I32ReinterpretF32)],
+        ValType::I64 => fold.to_vec(),
+        _ => [unop(UnaryOp::I64ReinterpretF64)]
+            .into_iter()
+            .chain(fold)
+            .collect(),
+    }
+}
+
+const NUMBERS: [ValType; 4] = [ValType::I32, ValType::I64, ValType::F32, ValType::F64];
 
 pub fn run(wasm: &[u8], u: &mut Unstructured) -> Result<Vec<u8>> {
     let Ok(mut m) = Module::from_buffer(wasm) else {
@@ -34,18 +122,44 @@ fn shapes(m: &mut Module, u: &mut Unstructured) -> Result<()> {
         let memory = m.memories.get(mem);
         let bytes = memory.initial << memory.page_size_log2.unwrap_or(16);
         if bytes >= 64 && u.arbitrary()? {
-            let len = u.int_in_range(1..=bytes.min(512))?;
-            let offset = u.int_in_range(0..=bytes - len)?;
-            let mut value: Vec<u8> = (0..len).map(|_| u.arbitrary()).collect::<Result<_>>()?;
-            zero_runs(&mut value, u)?;
-            m.data.add(
-                DataKind::Active {
-                    memory: mem,
-                    offset: ConstExpr::Value(Value::I32(offset as i32)),
-                },
-                value,
-            );
+            // Mostly segments that fit. Now and then one touches or overlaps
+            // the one before it, ends where memory ends, or runs past it.
+            let mut last_end = 0u64;
+            for _ in 0..u.int_in_range(1..=3)? {
+                let len = u.int_in_range(0..=bytes.min(512))?;
+                let fits = bytes - len;
+                let offset = match u.int_in_range(0..=11)? {
+                    0 => fits + u.int_in_range(1..=8)?,
+                    1 => fits,
+                    2 | 3 => last_end.saturating_sub(u.int_in_range(0..=4)?).min(fits),
+                    _ => u.int_in_range(0..=fits)?,
+                };
+                let mut value: Vec<u8> = (0..len).map(|_| u.arbitrary()).collect::<Result<_>>()?;
+                if u.ratio(1, 8)? {
+                    value.fill(0);
+                } else if !value.is_empty() {
+                    zero_runs(&mut value, u)?;
+                }
+                let id = m.data.add(
+                    DataKind::Active {
+                        memory: mem,
+                        offset: ConstExpr::Value(Value::I32(offset as i32)),
+                    },
+                    value,
+                );
+                m.memories.get_mut(mem).data_segments.insert(id);
+                last_end = offset + len;
+            }
         }
+    }
+    if u.ratio(1, 4)? {
+        let data = (0..u.int_in_range(0..=16)?)
+            .map(|_| u.arbitrary())
+            .collect::<Result<_>>()?;
+        m.customs.add(RawCustomSection {
+            name: "planted".into(),
+            data,
+        });
     }
 
     let data: Vec<_> = m.data.iter().map(|d| d.id()).collect();
@@ -67,6 +181,10 @@ fn shapes(m: &mut Module, u: &mut Unstructured) -> Result<()> {
     for _ in 0..u.int_in_range(0..=3)? {
         let f = *u.choose(&local)?;
         tails(m, f, observer, u)?;
+    }
+    for _ in 0..u.int_in_range(0..=3)? {
+        let f = *u.choose(&local)?;
+        arms(m, f, observer, u)?;
     }
     for _ in 0..u.int_in_range(0..=3)? {
         helper(m, &local, observer, u)?;
@@ -115,11 +233,13 @@ fn copies(wasm: &[u8], u: &mut Unstructured) -> Result<Vec<u8>> {
         export(&mut m, clone, &mut n);
     }
 
-    let all: Vec<FunctionId> = m.funcs.iter().map(|f| f.id()).collect();
+    // A thunk can forward to an earlier thunk, so chains form.
+    let mut all: Vec<FunctionId> = m.funcs.iter().map(|f| f.id()).collect();
     for _ in 0..u.int_in_range(0..=4)? {
         let g = *u.choose(&all)?;
         let swap = u.ratio(1, 4)?;
         if let Some(t) = thunk(&mut m, g, swap) {
+            all.push(t);
             if swap {
                 export(&mut m, t, &mut n);
             } else {
@@ -130,11 +250,60 @@ fn copies(wasm: &[u8], u: &mut Unstructured) -> Result<Vec<u8>> {
             }
         }
     }
+    // Two thunks that forward to each other. A call to one runs out of
+    // stack, so they are only reachable through the planted table.
+    if u.ratio(1, 8)?
+        && let Some(a) = thunk(&mut m, *u.choose(&all)?, false)
+        && let Some(b) = thunk(&mut m, a, false)
+    {
+        let lf = m.funcs.get_mut(a).kind.unwrap_local_mut();
+        let entry = lf.entry_block();
+        if let Some((Instr::Call(call), _)) = lf.block_mut(entry).instrs.last_mut() {
+            call.func = b;
+        }
+        all.push(b);
+    }
     if !alias.is_empty() {
         redirect(&mut m, &alias, u)?;
     }
+    if u.ratio(1, 2)? {
+        table(&mut m, &all, u)?;
+    }
 
     Ok(m.emit_wasm())
+}
+
+/// An exported table that starts out full of one function, with an element
+/// segment written over it. The check calls its slots, so this reaches
+/// functions nothing else refers to and shows which function each slot holds.
+fn table(m: &mut Module, funcs: &[FunctionId], u: &mut Unstructured) -> Result<()> {
+    let size = u.int_in_range(1..=6)?;
+    let init = u
+        .ratio(2, 3)?
+        .then_some(ConstExpr::RefFunc(*u.choose(funcs)?));
+    let table = m
+        .tables
+        .add_local_with_init(false, size, None, RefType::FUNCREF, init);
+    m.exports.add("planted_table", table);
+    let items = (0..u.int_in_range(0..=size)?)
+        .map(|_| u.choose(funcs).copied())
+        .collect::<Result<Vec<_>>>()?;
+    // Rarely past the end of the table, which fails instantiation.
+    let room = size - items.len() as u64;
+    let offset = if u.ratio(1, 16)? {
+        room + 1
+    } else {
+        u.int_in_range(0..=room)?
+    };
+    let segment = m.elements.add(
+        ElementKind::Active {
+            table,
+            offset: ConstExpr::Value(Value::I32(offset as i32)),
+        },
+        ElementItems::Functions(items),
+    );
+    m.tables.get_mut(table).elem_segments.insert(segment);
+    Ok(())
 }
 
 fn zero_runs(value: &mut [u8], u: &mut Unstructured) -> Result<()> {
@@ -168,12 +337,13 @@ fn observe(g: GlobalId, value: Vec<Instr>) -> Vec<Instr> {
 }
 
 fn constant_sets(m: &mut Module, f: FunctionId, g: GlobalId, u: &mut Unstructured) -> Result<()> {
-    let x = m.locals.add(ValType::I32);
+    let ty = *u.choose(&NUMBERS)?;
+    let x = m.locals.add(ty);
     let FunctionKind::Local(lf) = &mut m.funcs.get_mut(f).kind else {
         return Ok(());
     };
-    let pool: Vec<i32> = (0..u.int_in_range(1..=2)?)
-        .map(|_| u.int_in_range(-2..=300))
+    let pool: Vec<Value> = (0..u.int_in_range(1..=2)?)
+        .map(|_| constant(ty, u))
         .collect::<Result<_>>()?;
     let all = seqs(lf);
     for _ in 0..u.int_in_range(2..=8)? {
@@ -181,13 +351,15 @@ fn constant_sets(m: &mut Module, f: FunctionId, g: GlobalId, u: &mut Unstructure
         let code = if u.ratio(2, 3)? {
             vec![
                 Const {
-                    value: Value::I32(*u.choose(&pool)?),
+                    value: *u.choose(&pool)?,
                 }
                 .into(),
                 LocalSet { local: x }.into(),
             ]
         } else {
-            observe(g, vec![LocalGet { local: x }.into()])
+            let mut value = vec![LocalGet { local: x }.into()];
+            value.extend(to_i32(ty));
+            observe(g, value)
         };
         insert(lf, s, at, code);
     }
@@ -196,29 +368,57 @@ fn constant_sets(m: &mut Module, f: FunctionId, g: GlobalId, u: &mut Unstructure
 
 fn tails(m: &mut Module, f: FunctionId, g: GlobalId, u: &mut Unstructured) -> Result<()> {
     let no_results = m.types.get(m.funcs.get(f).ty()).results().is_empty();
-    let FunctionKind::Local(lf) = &mut m.funcs.get_mut(f).kind else {
+    if !matches!(m.funcs.get(f).kind, FunctionKind::Local(_)) {
         return Ok(());
+    }
+    // Sometimes the tail reads a non-nullable local, written once at the top
+    // of the function. Such a read only validates inside the block that
+    // holds the write, or one nested in it.
+    let reference = if u.ratio(1, 4)? {
+        let ty = RefType {
+            nullable: false,
+            heap_type: HeapType::Abstract(AbstractHeapType::Func),
+        };
+        m.elements
+            .add(ElementKind::Declared, ElementItems::Functions(vec![f]));
+        Some(m.locals.add(ValType::Ref(ty)))
+    } else {
+        None
     };
+    let lf = m.funcs.get_mut(f).kind.unwrap_local_mut();
     let conds: Vec<LocalId> = lf
         .args
         .iter()
         .copied()
         .filter(|&a| m.locals.get(a).ty() == ValType::I32)
         .collect();
-    let mut tail = observe(
-        g,
-        vec![
-            Const {
-                value: Value::I32(u.arbitrary()?),
-            }
-            .into(),
-        ],
-    );
-    tail.push(if no_results && u.arbitrary()? {
+    // One tail to share, and sometimes a second that differs from it in one
+    // constant and so must stay apart.
+    let ty = *u.choose(&NUMBERS)?;
+    let end: Instr = if no_results && u.arbitrary()? {
         Return {}.into()
     } else {
         Unreachable {}.into()
-    });
+    };
+    let tails: Vec<Vec<Instr>> = (0..u.int_in_range(1..=2)?)
+        .map(|_| {
+            let mut value = vec![
+                Const {
+                    value: constant(ty, u)?,
+                }
+                .into(),
+            ];
+            value.extend(to_i32(ty));
+            if let Some(local) = reference
+                && u.arbitrary()?
+            {
+                value = vec![LocalGet { local }.into(), RefIsNull {}.into()];
+            }
+            let mut tail = observe(g, value);
+            tail.push(end.clone());
+            Ok(tail)
+        })
+        .collect::<Result<_>>()?;
     let all = seqs(lf);
     for _ in 0..u.int_in_range(2..=4)? {
         let (s, at) = position(lf, &all, u)?;
@@ -230,7 +430,7 @@ fn tails(m: &mut Module, f: FunctionId, g: GlobalId, u: &mut Unstructured) -> Re
             .builder_mut()
             .dangling_instr_seq(InstrSeqType::Simple(None))
             .id();
-        insert(lf, then, 0, tail.clone());
+        insert(lf, then, 0, u.choose(&tails)?.clone());
         let mut code: Vec<Instr> = match u.choose(&conds) {
             Ok(&c) => vec![
                 LocalGet { local: c }.into(),
@@ -254,6 +454,96 @@ fn tails(m: &mut Module, f: FunctionId, g: GlobalId, u: &mut Unstructured) -> Re
         );
         insert(lf, s, at, code);
     }
+    // Last, so that the write comes before every tail.
+    if let Some(local) = reference {
+        let entry = lf.entry_block();
+        insert(
+            lf,
+            entry,
+            0,
+            [RefFunc { func: f }.into(), LocalSet { local }.into()],
+        );
+    }
+    Ok(())
+}
+
+/// `block $out … if $arm … br $out end … end`, the shape `branches` turns
+/// into `if … else … end`, sometimes with a way out of the arm or the block
+/// from the middle of the arm.
+fn arms(m: &mut Module, f: FunctionId, g: GlobalId, u: &mut Unstructured) -> Result<()> {
+    let FunctionKind::Local(lf) = &mut m.funcs.get_mut(f).kind else {
+        return Ok(());
+    };
+    let conds: Vec<LocalId> = lf
+        .args
+        .iter()
+        .copied()
+        .filter(|&a| m.locals.get(a).ty() == ValType::I32)
+        .collect();
+    let cond = |u: &mut Unstructured| -> Result<Vec<Instr>> {
+        let value = match u.choose(&conds) {
+            Ok(&c) => LocalGet { local: c }.into(),
+            Err(_) => GlobalGet { global: g }.into(),
+        };
+        Ok(vec![
+            value,
+            Const {
+                value: Value::I32(u.int_in_range(0..=3)?),
+            }
+            .into(),
+            Binop {
+                op: *u.choose(&[BinaryOp::I32And, BinaryOp::I32LtS, BinaryOp::I32Eq])?,
+            }
+            .into(),
+        ])
+    };
+    let effect = |u: &mut Unstructured| -> Result<Vec<Instr>> {
+        Ok(observe(
+            g,
+            vec![
+                Const {
+                    value: Value::I32(u.arbitrary()?),
+                }
+                .into(),
+            ],
+        ))
+    };
+    let all = seqs(lf);
+    let (s, at) = position(lf, &all, u)?;
+    let mut seq = || {
+        lf.builder_mut()
+            .dangling_instr_seq(InstrSeqType::Simple(None))
+            .id()
+    };
+    let (out, arm, alt) = (seq(), seq(), seq());
+
+    let mut then = effect(u)?;
+    match u.int_in_range(0..=3)? {
+        0 => then.extend(cond(u)?.into_iter().chain([BrIf { block: arm }.into()])),
+        1 => then.extend(cond(u)?.into_iter().chain([BrIf { block: out }.into()])),
+        _ => {}
+    }
+    if u.arbitrary()? {
+        then.extend(effect(u)?);
+    }
+    if u.ratio(7, 8)? {
+        then.push(Br { block: out }.into());
+    }
+    insert(lf, arm, 0, then);
+
+    let mut body = cond(u)?;
+    body.push(
+        IfElse {
+            consequent: arm,
+            alternative: alt,
+        }
+        .into(),
+    );
+    if u.ratio(7, 8)? {
+        body.extend(effect(u)?);
+    }
+    insert(lf, out, 0, body);
+    insert(lf, s, at, [Block { seq: out }.into()]);
     Ok(())
 }
 
@@ -440,13 +730,13 @@ fn perturb_constants(m: &mut Module, f: FunctionId, u: &mut Unstructured) -> Res
                 if self.u.ratio(2, 3)? {
                     return Ok(());
                 }
-                match v {
-                    Value::I32(x) => *x = self.u.arbitrary()?,
-                    Value::I64(x) => *x = self.u.arbitrary()?,
-                    Value::F32(x) => *x = f32::from_bits(self.u.arbitrary()?),
-                    Value::F64(x) => *x = f64::from_bits(self.u.arbitrary()?),
-                    Value::V128(x) => *x = self.u.arbitrary()?,
-                }
+                *v = match v {
+                    Value::I32(_) => constant(ValType::I32, self.u)?,
+                    Value::I64(_) => constant(ValType::I64, self.u)?,
+                    Value::F32(_) => constant(ValType::F32, self.u)?,
+                    Value::F64(_) => constant(ValType::F64, self.u)?,
+                    Value::V128(_) => Value::V128(self.u.arbitrary()?),
+                };
                 Ok(())
             })();
             if let Err(e) = r {

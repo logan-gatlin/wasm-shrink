@@ -35,7 +35,7 @@ function trace(path) {
             r = `throw ${tag[0]}(${args.join(", ")})`;
           }
         } else if (e instanceof RangeError) {
-          return null;
+          return { events: out, complete: false };
         } else {
           r = `trap ${e.constructor.name}: ${e.message}`;
         }
@@ -43,7 +43,7 @@ function trace(path) {
       out.push(`${name}(${a}) ${r} g=${ex.g.value} log=[${log.splice(0).join(",")}]`);
     }
   }
-  return out;
+  return { events: out, complete: true };
 }
 
 function compare(input, output) {
@@ -58,18 +58,22 @@ function compare(input, output) {
   } catch (e) {
     return [`output fails to run: ${e}`];
   }
-  if (a === null || b === null) return [];
-  const at = a.findIndex((x, k) => x !== b[k]);
-  if (at < 0 && a.length === b.length) return [];
+  const length = Math.min(a.events.length, b.events.length);
+  let at = 0;
+  while (at < length && a.events[at] === b.events[at]) at++;
+  if (at === length) {
+    if (!a.complete || !b.complete) return null;
+    if (a.events.length === b.events.length) return [];
+  }
   return [
     `first difference at call ${at}`,
-    `  input:  ${a[at]}`,
-    `  output: ${b[at]}`,
+    `  input:  ${a.events[at]}`,
+    `  output: ${b.events[at]}`,
   ];
 }
 
 for await (const line of createInterface({ input: process.stdin })) {
   const [input, output] = line.split("\t");
   const problems = compare(input, output);
-  process.stdout.write(problems.length ? `bad\n${problems.join("\n")}\nend\n` : "ok\n");
+  process.stdout.write(problems === null ? "inconclusive\n" : problems.length ? `bad\n${problems.join("\n")}\nend\n` : "ok\n");
 }

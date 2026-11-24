@@ -86,6 +86,7 @@ fn main() -> Result<()> {
     if translate_to_exnref {
         passes.insert(0, Pass::TranslateToExnref);
     }
+    wasm_shrink::gc(&mut m);
     for pass in passes {
         let t = Instant::now();
         let stats = pass.run(&mut m);
@@ -97,7 +98,7 @@ fn main() -> Result<()> {
             );
         }
     }
-    walrus::passes::gc::run(&mut m);
+    wasm_shrink::gc(&mut m);
     let out = m.emit_wasm();
     if !no_reorder && !quiet {
         eprintln!(

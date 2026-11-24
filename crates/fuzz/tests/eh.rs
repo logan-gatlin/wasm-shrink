@@ -19,15 +19,19 @@ fn eh_seeds() {
         }
     };
     let mut failed = Vec::new();
+    let total = seeds.end - seeds.start;
+    let mut executed = 0;
     for seed in seeds {
         let Ok(case) = EhCase::generate(&seed_data(seed)) else {
             continue;
         };
-        if let Err(e) = eh::check_case(&case) {
-            failed.push(format!(
+        match eh::check_case(&case) {
+            Ok(wasm_shrink_fuzz::Checked::Executed) => executed += 1,
+            Ok(_) => (),
+            Err(e) => failed.push(format!(
                 "seed {seed} {}: {e}",
                 eh::passes_flag(&case.passes)
-            ));
+            )),
         }
     }
     assert!(
@@ -40,5 +44,9 @@ fn eh_seeds() {
             .cloned()
             .collect::<Vec<_>>()
             .join("\n")
+    );
+    assert!(
+        total > 0 && executed * 2 >= total,
+        "only {executed} of {total} EH seeds executed"
     );
 }

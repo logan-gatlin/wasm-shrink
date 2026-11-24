@@ -10,7 +10,7 @@ use std::collections::HashSet;
 use walrus::ir::*;
 use walrus::{LocalFunction, Module, ValType};
 
-fn sleb_len(v: i64) -> usize {
+pub(crate) fn sleb_len(v: i64) -> usize {
     let mut n = 1;
     let mut v = v;
     while !(-64..64).contains(&v) {

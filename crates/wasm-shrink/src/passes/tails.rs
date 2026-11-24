@@ -26,11 +26,12 @@
 //! `branches` runs it.
 
 use crate::passes::branches::children;
+use crate::size::sleb_len;
 use crate::stack::effect;
-use crate::util::leb_len;
 use std::collections::HashMap;
+use std::fmt::Write;
 use walrus::ir::*;
-use walrus::{LocalFunction, Module};
+use walrus::{LocalFunction, Module, ValType};
 
 #[derive(Default, Debug)]
 pub struct Stats {
@@ -58,8 +59,8 @@ fn terminates(i: &Instr) -> bool {
 fn size(i: &Instr) -> usize {
     match i {
         Instr::Const(c) => match c.value {
-            Value::I32(v) => 1 + leb_len(v.unsigned_abs() as u64 * 2),
-            Value::I64(v) => 1 + leb_len(v.unsigned_abs() * 2),
+            Value::I32(v) => 1 + sleb_len(v.into()),
+            Value::I64(v) => 1 + sleb_len(v),
             Value::F32(_) => 5,
             Value::F64(_) => 9,
             Value::V128(_) => 18,
@@ -126,6 +127,15 @@ fn tail_start(m: &Module, f: &LocalFunction, instrs: &[(Instr, InstrLocId)]) -> 
             break;
         }
         if effect(m, f, i).is_none() {
+            break;
+        }
+        // A non-nullable local has to be written in a block that encloses
+        // its reads. The shared tail sits outside every block of the body,
+        // so it cannot read one that the body wrote.
+        if let Instr::LocalGet(g) = i
+            && matches!(m.locals.get(g.local).ty(), ValType::Ref(r) if !r.nullable)
+            && !f.args.contains(&g.local)
+        {
             break;
         }
         lo -= 1;
@@ -208,7 +218,19 @@ fn plan(m: &Module, f: &LocalFunction) -> Option<Fold> {
         let instrs = &f.block(s).instrs;
         if let Some(k) = tail_start(m, f, instrs) {
             let tail: Vec<&Instr> = instrs[k..].iter().map(|(i, _)| i).collect();
-            let key = format!("{tail:?}");
+            let mut key = String::new();
+            for instr in &tail {
+                match instr {
+                    Instr::Const(Const {
+                        value: Value::F32(v),
+                    }) => write!(key, "f32:{:08x};", v.to_bits()),
+                    Instr::Const(Const {
+                        value: Value::F64(v),
+                    }) => write!(key, "f64:{:016x};", v.to_bits()),
+                    other => write!(key, "{other:?};"),
+                }
+                .unwrap();
+            }
             bytes
                 .entry(key.clone())
                 .or_insert_with(|| tail.iter().map(|i| size(i)).sum());
