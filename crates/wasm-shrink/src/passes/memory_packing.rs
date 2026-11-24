@@ -93,15 +93,16 @@ pub fn run(m: &mut Module) -> Stats {
         let mut ok = true;
         for d in m.data.iter() {
             match &d.kind {
-                DataKind::Active { memory, .. } if *memory == mem => match offset_of(&d.kind) {
-                    Some((_, off))
-                        if let Some(end) = off.checked_add(d.value.len() as u64)
-                            && u128::from(end) <= initial_bytes =>
-                    {
-                        segs.push((d.id(), off, end))
+                DataKind::Active { memory, .. } if *memory == mem => {
+                    let bounds = offset_of(&d.kind).and_then(|(_, off)| {
+                        let end = off.checked_add(d.value.len() as u64)?;
+                        (u128::from(end) <= initial_bytes).then_some((off, end))
+                    });
+                    match bounds {
+                        Some((off, end)) => segs.push((d.id(), off, end)),
+                        None => ok = false,
                     }
-                    _ => ok = false,
-                },
+                }
                 _ => {}
             }
         }
