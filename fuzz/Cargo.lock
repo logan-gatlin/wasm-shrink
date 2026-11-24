@@ -980,7 +980,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-shrink"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "rayon",
  "walrus",
@@ -990,7 +990,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-shrink-fuzz"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "arbitrary",
  "walrus",
